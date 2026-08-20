@@ -1,49 +1,31 @@
-# Behavioural Feature Engineering
+# Opportunity-Level Feature Engineering
 
-## Objective
+`src/feature_engineering.py` creates `data/processed/opportunity_features.csv`.
+Each row represents one CRM opportunity, retaining pipeline fields alongside
+descriptive behavioural aggregates. There is no predictive model.
 
-Create an opportunity-level analytical dataset by combining the original sales pipeline with simulated behavioural data.
+## Pipeline fields
 
-## Source datasets
+- `is_closed`, `is_won`, and `deal_duration_days` make outcome KPIs consistent.
+- `deal_speed` divides closed-deal duration into Fast, Medium, and Slow thirds;
+  open opportunities are labelled `Open`.
 
-- sales_pipeline.csv
-- email_history.csv
-- crm_activities.csv
-- stage_history.csv
+## Behavioural fields
 
-## Behavioural features
+- Email: sent/responded counts, response rate, average and median response time.
+- Activity: total, successful, unique-type, call, meeting, demo, and follow-up counts.
+- Stage: transition count, total stage days, and average stage days.
+- Engagement: `has_behavioural_history` and a transparent Low/Medium/High
+  `engagement_level` based on email response rate and activity volume.
 
-### Email features
+Prospecting opportunities without behavioural records are explicitly labelled
+`No history`; null response times remain null when a customer did not respond.
 
-- email_count
-- response_rate
-- avg_response_hours
-- median_response_hours
+## Run
 
-### CRM activity features
+```bash
+.venv/bin/python src/data_preparation.py
+.venv/bin/python src/feature_engineering.py
+```
 
-- activity_count
-- unique_activity_types
-
-### Stage features
-
-- stage_transition_count
-- total_stage_days
-- avg_stage_days
-
-### Pipeline features
-
-- deal_duration_days
-- deal_stage
-- close_value
-- sales_agent
-- product
-- account
-
-## Output
-
-The resulting dataset is:
-
-data/processed/opportunity_features.csv
-
-Each row represents one sales opportunity.
+This CSV is the single source for the SQLite analytical layer and dashboard.
