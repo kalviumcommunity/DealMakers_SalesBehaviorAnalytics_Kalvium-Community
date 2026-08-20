@@ -40,6 +40,16 @@ st.caption(
     "and closure"
 )
 
+with st.expander("How to read this dashboard", expanded=True):
+    st.markdown(
+        "- **Opportunity**: one potential sales deal in the CRM.\n"
+        "- **Response rate**: percentage of emails that received a customer response.\n"
+        "- **Response time**: average number of **hours** a customer took to reply; lower means a faster reply.\n"
+        "- **Activity count**: average number of logged CRM activities per opportunity, including calls, meetings, demos, follow-ups, and sales emails.\n"
+        "- **Deal duration**: days between engagement and close for a closed opportunity.\n"
+        "- These are simulated behavioural signals and show associations, not proof that one behaviour caused an outcome."
+    )
+
 st.sidebar.header("Filters")
 
 agents = st.sidebar.multiselect(
@@ -215,8 +225,26 @@ speed_summary = (
     .reset_index()
 )
 
+speed_summary_display = speed_summary.rename(
+    columns={
+        "deal_speed": "Deal speed",
+        "response_rate": "Average response rate",
+        "avg_response_time": "Average response time (hours)",
+        "activity_count": "Average CRM activities per opportunity",
+        "followup_count": "Average follow-ups per opportunity",
+        "deals": "Closed opportunities",
+    }
+)
+
 st.dataframe(
-    speed_summary,
+    speed_summary_display.style.format(
+        {
+            "Average response rate": "{:.1%}",
+            "Average response time (hours)": "{:.1f}",
+            "Average CRM activities per opportunity": "{:.1f}",
+            "Average follow-ups per opportunity": "{:.1f}",
+        }
+    ),
     use_container_width=True
 )
 
@@ -235,6 +263,8 @@ if len(closed_speed) > 0:
         ],
         title="Response Time vs Deal Duration"
     )
+    fig_response.update_xaxes(title="Average customer response time (hours)")
+    fig_response.update_yaxes(title="Deal duration (days)")
 
     st.plotly_chart(
         fig_response,
@@ -272,8 +302,24 @@ agent_summary = agent_summary.sort_values(
     "avg_deal_duration"
 )
 
+agent_summary_display = agent_summary.rename(
+    columns={
+        "sales_agent": "Sales agent",
+        "opportunities": "Opportunities",
+        "avg_deal_duration": "Average deal duration (days)",
+        "avg_response_rate": "Average response rate",
+        "avg_activity_count": "Average CRM activities per opportunity",
+    }
+)
+
 st.dataframe(
-    agent_summary.head(15),
+    agent_summary_display.head(15).style.format(
+        {
+            "Average deal duration (days)": "{:.1f}",
+            "Average response rate": "{:.1%}",
+            "Average CRM activities per opportunity": "{:.1f}",
+        }
+    ),
     use_container_width=True
 )
 
