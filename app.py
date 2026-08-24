@@ -188,7 +188,7 @@ fig_funnel = px.bar(
 
 st.plotly_chart(
     fig_funnel,
-    use_container_width=True
+    width="stretch"
 )
 
 
@@ -245,7 +245,7 @@ st.dataframe(
             "Average follow-ups per opportunity": "{:.1f}",
         }
     ),
-    use_container_width=True
+    width="stretch"
 )
 
 
@@ -268,7 +268,7 @@ if len(closed_speed) > 0:
 
     st.plotly_chart(
         fig_response,
-        use_container_width=True
+        width="stretch"
     )
 
 
@@ -320,7 +320,7 @@ st.dataframe(
             "Average CRM activities per opportunity": "{:.1f}",
         }
     ),
-    use_container_width=True
+    width="stretch"
 )
 
 
@@ -354,7 +354,7 @@ fig_product = px.bar(
 
 st.plotly_chart(
     fig_product,
-    use_container_width=True
+    width="stretch"
 )
 
 
