@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .DS_Store
+data/processed/cleaned/
+data/processed/data_quality_report.json
+data/processed/*.db
