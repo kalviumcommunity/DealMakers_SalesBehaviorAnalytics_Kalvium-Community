@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from data_preparation import load_and_standardise
+try:
+    from .data_preparation import load_and_standardise
+except ImportError:
+    from data_preparation import load_and_standardise
 
 
 PROCESSED_DATA = Path("data/processed")
@@ -27,6 +30,11 @@ def create_pipeline_features(pipeline: pd.DataFrame) -> pd.DataFrame:
 
 
 def create_email_features(emails: pd.DataFrame) -> pd.DataFrame:
+    if emails.empty:
+        return pd.DataFrame(columns=[
+            "opportunity_id", "email_count", "responded_email_count", "response_rate",
+            "avg_response_time_hours", "median_response_time_hours",
+        ])
     return (
         emails.assign(responded=emails["response_status"].eq("Responded").astype(int))
         .groupby("opportunity_id")
@@ -42,6 +50,12 @@ def create_email_features(emails: pd.DataFrame) -> pd.DataFrame:
 
 
 def create_activity_features(activities: pd.DataFrame) -> pd.DataFrame:
+    if activities.empty:
+        return pd.DataFrame(columns=[
+            "opportunity_id", "activity_count", "successful_activity_count",
+            "unique_activity_types", "call_count", "meeting_count", "demo_count",
+            "followup_count",
+        ])
     activity = activities.copy()
     activity["successful_activity"] = activity["activity_outcome"].isin(
         {"Connected", "Completed", "Interested", "Responded"}
@@ -64,6 +78,10 @@ def create_activity_features(activities: pd.DataFrame) -> pd.DataFrame:
 
 
 def create_stage_features(stages: pd.DataFrame) -> pd.DataFrame:
+    if stages.empty:
+        return pd.DataFrame(columns=[
+            "opportunity_id", "stage_transition_count", "total_stage_days", "avg_stage_days",
+        ])
     return (
         stages.groupby("opportunity_id")
         .agg(
