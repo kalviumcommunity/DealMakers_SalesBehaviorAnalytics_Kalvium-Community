@@ -30,6 +30,11 @@ st.set_page_config(page_title="Sales Behaviour Analytics", layout="wide")
 
 
 @st.cache_data
+def to_csv_bytes(data: pd.DataFrame) -> bytes:
+    return data.to_csv(index=False).encode("utf-8")
+
+
+@st.cache_data
 def load_demo_data() -> pd.DataFrame:
     if not DB_PATH.exists():
         return pd.DataFrame()
@@ -90,6 +95,16 @@ def apply_filters(data: pd.DataFrame) -> pd.DataFrame:
         filtered = filtered[filtered["product"].isin(products)]
     if accounts:
         filtered = filtered[filtered["account"].fillna("Unknown").isin(accounts)]
+
+    engage_dates = pd.to_datetime(data["engage_date"], errors="coerce").dropna()
+    if not engage_dates.empty:
+        min_date, max_date = engage_dates.min().date(), engage_dates.max().date()
+        date_range = st.sidebar.date_input("Engaged Between", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            start_date, end_date = date_range
+            engaged = pd.to_datetime(filtered["engage_date"], errors="coerce")
+            filtered = filtered[engaged.dt.date.between(start_date, end_date)]
+
     return filtered
 
 
@@ -134,6 +149,13 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
     columns[4].metric("Median Deal Duration", f"{median_duration:.0f} days")
     columns[5].metric("Won Revenue", f"${won['close_value'].sum():,.0f}")
 
+    st.download_button(
+        "Download filtered opportunities (CSV)",
+        data=to_csv_bytes(filtered),
+        file_name="filtered_opportunities.csv",
+        mime="text/csv",
+    )
+
     st.divider()
     st.subheader("Sales Pipeline")
     stage_counts = filtered["deal_stage"].value_counts().rename_axis("deal_stage").reset_index(name="opportunities")
@@ -141,6 +163,33 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
         st.info("No opportunities match the current filters.")
     else:
         st.plotly_chart(px.bar(stage_counts, x="deal_stage", y="opportunities", title="Opportunities by Deal Stage"), width="stretch")
+
+    st.subheader("Trends Over Time")
+    engaged = filtered.copy()
+    engaged["engage_month"] = pd.to_datetime(engaged["engage_date"], errors="coerce").dt.to_period("M").dt.to_timestamp()
+    monthly_engagements = engaged.dropna(subset=["engage_month"]).groupby("engage_month").size().reset_index(name="opportunities")
+
+    closed_dated = closed.copy()
+    closed_dated["close_month"] = pd.to_datetime(closed_dated["close_date"], errors="coerce").dt.to_period("M").dt.to_timestamp()
+    monthly_outcomes = closed_dated.dropna(subset=["close_month"]).groupby("close_month").agg(
+        closed=("opportunity_id", "count"), won=("is_won", "sum"),
+    ).reset_index()
+    monthly_outcomes["win_rate"] = monthly_outcomes["won"] / monthly_outcomes["closed"] * 100
+
+    if monthly_engagements.empty and monthly_outcomes.empty:
+        st.info("No dated opportunities available for a trend view with the current filters.")
+    else:
+        trend_columns = st.columns(2)
+        if not monthly_engagements.empty:
+            trend_columns[0].plotly_chart(
+                px.line(monthly_engagements, x="engage_month", y="opportunities", markers=True, title="Opportunities Engaged by Month"),
+                width="stretch",
+            )
+        if not monthly_outcomes.empty:
+            trend_columns[1].plotly_chart(
+                px.line(monthly_outcomes, x="close_month", y="win_rate", markers=True, title="Win Rate by Month (Closed Deals)"),
+                width="stretch",
+            )
 
     st.subheader("Behavioural Patterns by Deal Speed")
     speed_summary = closed.groupby("deal_speed").agg(
@@ -197,6 +246,10 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
         "avg_deal_duration": "{:.1f}", "avg_response_rate": "{:.1%}", "avg_activity_count": "{:.1f}",
     }), width="stretch")
     if not agent_summary.empty:
+        st.download_button(
+            "Download agent summary (CSV)", data=to_csv_bytes(agent_summary),
+            file_name="agent_summary.csv", mime="text/csv", key="download_agent_summary",
+        )
         selected_agent = st.selectbox("Inspect a sales agent", agent_summary["sales_agent"].tolist())
         agent = filtered[filtered["sales_agent"] == selected_agent]
         agent_closed = agent[agent["is_closed"] == 1]
@@ -211,6 +264,10 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
     product_summary = closed.groupby("product").agg(avg_duration=("deal_duration_days", "mean"), deals=("opportunity_id", "count")).reset_index()
     if not product_summary.empty:
         st.plotly_chart(px.bar(product_summary, x="product", y="avg_duration", title="Average Deal Duration by Product"), width="stretch")
+        st.download_button(
+            "Download product summary (CSV)", data=to_csv_bytes(product_summary),
+            file_name="product_summary.csv", mime="text/csv", key="download_product_summary",
+        )
 
     show_opportunity_explorer(filtered)
 
