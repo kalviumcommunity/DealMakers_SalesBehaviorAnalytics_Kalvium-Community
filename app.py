@@ -1,416 +1,244 @@
 import sqlite3
 from pathlib import Path
+
 import pandas as pd
-import streamlit as st
 import plotly.express as px
+import streamlit as st
+
+from src.upload_processing import process_uploaded_dataset
 
 
 DB_PATH = Path("data/processed/sales_analytics.db")
+UPLOAD_NAMES = [
+    "sales_pipeline.csv",
+    "email_history.csv",
+    "crm_activities.csv",
+    "stage_history.csv",
+]
+DETAIL_COLUMNS = [
+    "opportunity_id", "sales_agent", "account", "product", "deal_stage",
+    "close_value", "engage_date", "close_date", "deal_duration_days", "deal_speed",
+    "is_closed", "is_won", "email_count", "responded_email_count", "response_rate",
+    "avg_response_time_hours", "median_response_time_hours", "activity_count",
+    "successful_activity_count", "call_count", "meeting_count", "demo_count",
+    "followup_count", "unique_activity_types", "stage_transition_count",
+    "total_stage_days", "avg_stage_days", "has_behavioural_history", "engagement_level",
+]
 
 
-st.set_page_config(
-    page_title="Sales Behaviour Analytics",
-    layout="wide"
-)
-
-if not DB_PATH.exists():
-    st.error("Analytics database not found. Run `.venv/bin/python src/load_database.py` first.")
-    st.stop()
+st.set_page_config(page_title="Sales Behaviour Analytics", layout="wide")
 
 
 @st.cache_data
-def load_data():
-    connection = sqlite3.connect(DB_PATH)
-
-    df = pd.read_sql(
-        "SELECT * FROM opportunity_features",
-        connection
-    )
-
-    connection.close()
-
-    return df
+def load_demo_data() -> pd.DataFrame:
+    if not DB_PATH.exists():
+        return pd.DataFrame()
+    with sqlite3.connect(DB_PATH) as connection:
+        return pd.read_sql("SELECT * FROM opportunity_features", connection)
 
 
-df = load_data()
+def show_upload_panel() -> None:
+    st.subheader("Upload New Data")
+    st.caption("Upload a pipeline file and any available behavioural history. Files are processed in memory and do not replace the demo dataset.")
+    uploads = {}
+    for filename in UPLOAD_NAMES:
+        label = filename if filename == "sales_pipeline.csv" else f"{filename} (optional)"
+        uploaded = st.file_uploader(label, type="csv", key=f"upload_{filename}")
+        if uploaded is not None:
+            uploads[filename] = uploaded
 
-st.title("Sales Behaviour Analytics")
-st.caption(
-    "Behavioural patterns associated with deal progression "
-    "and closure"
-)
+    if uploads:
+        st.write("Uploaded file preview")
+        preview_tabs = st.tabs(list(uploads))
+        for tab, (filename, uploaded) in zip(preview_tabs, uploads.items()):
+            with tab:
+                try:
+                    uploaded.seek(0)
+                    preview = pd.read_csv(uploaded)
+                    st.caption(f"{len(preview):,} rows | {len(preview.columns):,} columns")
+                    st.dataframe(preview.head(5), width="stretch")
+                except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError) as error:
+                    st.error(f"{filename}: could not preview this CSV ({error}).")
 
-with st.expander("How to read this dashboard", expanded=True):
-    st.markdown(
-        "- **Opportunity**: one potential sales deal in the CRM.\n"
-        "- **Response rate**: percentage of emails that received a customer response.\n"
-        "- **Response time**: average number of **hours** a customer took to reply; lower means a faster reply.\n"
-        "- **Activity count**: average number of logged CRM activities per opportunity, including calls, meetings, demos, follow-ups, and sales emails.\n"
-        "- **Deal duration**: days between engagement and close for a closed opportunity.\n"
-        "- These are simulated behavioural signals and show associations, not proof that one behaviour caused an outcome."
-    )
+    if st.button("Validate and process uploads", type="primary", disabled="sales_pipeline.csv" not in uploads):
+        try:
+            features, _ = process_uploaded_dataset(uploads)
+        except ValueError as error:
+            st.session_state.pop("uploaded_features", None)
+            st.error(f"Upload failed:\n\n{error}")
+        else:
+            st.session_state["uploaded_features"] = features
+            st.success(f"Upload processed successfully: {len(features):,} opportunities and {len(features.columns):,} analytical columns.")
 
-st.sidebar.header("Filters")
-
-agents = st.sidebar.multiselect(
-    "Sales Agent",
-    sorted(df["sales_agent"].dropna().unique())
-)
-
-stages = st.sidebar.multiselect(
-    "Deal Stage",
-    sorted(df["deal_stage"].dropna().unique())
-)
-
-products = st.sidebar.multiselect(
-    "Product",
-    sorted(df["product"].dropna().unique())
-)
-
-accounts = st.sidebar.multiselect(
-    "Account",
-    sorted(df["account"].fillna("Unknown").unique())
-)
+    if "uploaded_features" in st.session_state:
+        st.info("Uploaded dataset is ready. Select it from the Dataset selector to view its analytics.")
 
 
-filtered = df.copy()
+def apply_filters(data: pd.DataFrame) -> pd.DataFrame:
+    st.sidebar.header("Filters")
+    agents = st.sidebar.multiselect("Sales Agent", sorted(data["sales_agent"].dropna().unique()))
+    stages = st.sidebar.multiselect("Deal Stage", sorted(data["deal_stage"].dropna().unique()))
+    products = st.sidebar.multiselect("Product", sorted(data["product"].dropna().unique()))
+    accounts = st.sidebar.multiselect("Account", sorted(data["account"].fillna("Unknown").unique()))
 
-if agents:
-    filtered = filtered[
-        filtered["sales_agent"].isin(agents)
-    ]
-
-if stages:
-    filtered = filtered[
-        filtered["deal_stage"].isin(stages)
-    ]
-
-if products:
-    filtered = filtered[
-        filtered["product"].isin(products)
-    ]
-
-if accounts:
-    filtered = filtered[
-        filtered["account"].fillna("Unknown").isin(accounts)
-    ]
+    filtered = data.copy()
+    if agents:
+        filtered = filtered[filtered["sales_agent"].isin(agents)]
+    if stages:
+        filtered = filtered[filtered["deal_stage"].isin(stages)]
+    if products:
+        filtered = filtered[filtered["product"].isin(products)]
+    if accounts:
+        filtered = filtered[filtered["account"].fillna("Unknown").isin(accounts)]
+    return filtered
 
 
-# -----------------------------
-# KPIs
-# -----------------------------
+def show_opportunity_explorer(data: pd.DataFrame) -> None:
+    st.subheader("Opportunity Explorer")
+    choices = data["opportunity_id"].astype(str).tolist()
+    selected = st.selectbox("Select an opportunity", ["Select an opportunity"] + choices)
+    if selected == "Select an opportunity":
+        st.caption("Select an opportunity to inspect its sales and behavioural profile.")
+        return
 
-total_opportunities = len(filtered)
-
-closed = filtered[
-    filtered["is_closed"] == 1
-]
-
-won = filtered[
-    filtered["is_won"] == 1
-]
-
-win_rate = (
-    len(won) / len(closed) * 100
-    if len(closed) > 0
-    else 0
-)
-
-median_duration = (
-    closed["deal_duration_days"].median()
-    if len(closed) > 0
-    else 0
-)
-
-avg_deal_value = (
-    closed["close_value"].mean()
-    if len(closed) > 0
-    else 0
-)
-
-total_revenue = won["close_value"].sum()
+    opportunity = data[data["opportunity_id"].astype(str).eq(selected)].iloc[0]
+    available = [column for column in DETAIL_COLUMNS if column in opportunity.index]
+    detail = opportunity[available].to_frame("Value")
+    detail.index = [column.replace("_", " ").title() for column in detail.index]
+    detail.loc["Behavioural History Available"] = "Yes" if opportunity["has_behavioural_history"] else "No history available"
+    st.dataframe(detail, width="stretch")
 
 
-col1, col2, col3, col4, col5 = st.columns(5)
+def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
+    st.title("Sales Behaviour Analytics")
+    st.caption(f"{dataset_label} | Behavioural patterns associated with deal progression and closure")
+    with st.expander("How to read this dashboard", expanded=True):
+        st.markdown(
+            "- **Response rate** is the percentage of emails that received a customer response.\n"
+            "- **Response time** is the average number of hours a customer took to reply.\n"
+            "- **Deal duration** is measured from engagement to close for closed opportunities.\n"
+            "- Behavioural history may be simulated; all findings are descriptive associations, not causal conclusions."
+        )
 
-col1.metric(
-    "Opportunities",
-    f"{total_opportunities:,}"
-)
+    filtered = apply_filters(data)
+    closed = filtered[filtered["is_closed"] == 1]
+    won = filtered[filtered["is_won"] == 1]
+    win_rate = len(won) / len(closed) * 100 if len(closed) else 0
+    median_duration = closed["deal_duration_days"].median() if len(closed) else 0
 
-col2.metric(
-    "Win Rate",
-    f"{win_rate:.1f}%"
-)
+    columns = st.columns(6)
+    columns[0].metric("Opportunities", f"{len(filtered):,}")
+    columns[1].metric("Closed Deals", f"{len(closed):,}")
+    columns[2].metric("Won Deals", f"{len(won):,}")
+    columns[3].metric("Win Rate", f"{win_rate:.1f}%")
+    columns[4].metric("Median Deal Duration", f"{median_duration:.0f} days")
+    columns[5].metric("Won Revenue", f"${won['close_value'].sum():,.0f}")
 
-col3.metric(
-    "Median Deal Duration",
-    f"{median_duration:.0f} days"
-)
+    st.divider()
+    st.subheader("Sales Pipeline")
+    stage_counts = filtered["deal_stage"].value_counts().rename_axis("deal_stage").reset_index(name="opportunities")
+    if stage_counts.empty:
+        st.info("No opportunities match the current filters.")
+    else:
+        st.plotly_chart(px.bar(stage_counts, x="deal_stage", y="opportunities", title="Opportunities by Deal Stage"), width="stretch")
 
-col4.metric(
-    "Average Deal Value",
-    f"${avg_deal_value:,.0f}"
-)
-
-col5.metric(
-    "Won Revenue",
-    f"${total_revenue:,.0f}"
-)
-
-
-st.divider()
-
-
-# -----------------------------
-# Deal funnel
-# -----------------------------
-
-st.subheader("Sales Pipeline")
-
-stage_counts = (
-    filtered["deal_stage"]
-    .value_counts()
-    .reset_index()
-)
-
-stage_counts.columns = [
-    "deal_stage",
-    "opportunities"
-]
-
-fig_funnel = px.bar(
-    stage_counts,
-    x="deal_stage",
-    y="opportunities",
-    title="Opportunities by Deal Stage"
-)
-
-st.plotly_chart(
-    fig_funnel,
-    width="stretch"
-)
-
-
-# -----------------------------
-# Behaviour vs deal speed
-# -----------------------------
-
-st.subheader(
-    "Behavioural Patterns by Deal Speed"
-)
-
-closed_speed = filtered[
-    filtered["is_closed"] == 1
-]
-
-speed_summary = (
-    closed_speed.groupby("deal_speed")
-    .agg(
+    st.subheader("Behavioural Patterns by Deal Speed")
+    speed_summary = closed.groupby("deal_speed").agg(
         response_rate=("response_rate", "mean"),
-        avg_response_time=(
-            "avg_response_time_hours",
-            "mean"
-        ),
-        activity_count=(
-            "activity_count",
-            "mean"
-        ),
-        followup_count=(
-            "followup_count",
-            "mean"
-        ),
-        deals=("opportunity_id", "count")
-    )
-    .reset_index()
-)
+        avg_response_time=("avg_response_time_hours", "mean"),
+        activity_count=("activity_count", "mean"),
+        followup_count=("followup_count", "mean"),
+        deals=("opportunity_id", "count"),
+    ).reset_index()
+    if speed_summary.empty:
+        st.info("Closed-deal behavioural comparisons are unavailable for this selection.")
+    else:
+        display = speed_summary.rename(columns={
+            "deal_speed": "Deal speed", "response_rate": "Average response rate",
+            "avg_response_time": "Average response time (hours)",
+            "activity_count": "Average CRM activities per opportunity",
+            "followup_count": "Average follow-ups per opportunity", "deals": "Closed opportunities",
+        })
+        st.dataframe(display.style.format({
+            "Average response rate": "{:.1%}", "Average response time (hours)": "{:.1f}",
+            "Average CRM activities per opportunity": "{:.1f}", "Average follow-ups per opportunity": "{:.1f}",
+        }), width="stretch")
+        st.plotly_chart(px.scatter(
+            closed, x="avg_response_time_hours", y="deal_duration_days", color="deal_speed",
+            hover_data=["opportunity_id", "sales_agent", "deal_stage"], title="Response Time vs Deal Duration",
+        ), width="stretch")
 
-speed_summary_display = speed_summary.rename(
-    columns={
-        "deal_speed": "Deal speed",
-        "response_rate": "Average response rate",
-        "avg_response_time": "Average response time (hours)",
-        "activity_count": "Average CRM activities per opportunity",
-        "followup_count": "Average follow-ups per opportunity",
-        "deals": "Closed opportunities",
-    }
-)
+    st.subheader("Won vs Lost Behaviour")
+    outcome_summary = closed.groupby("deal_stage").agg(
+        opportunities=("opportunity_id", "count"), response_rate=("response_rate", "mean"),
+        response_time=("avg_response_time_hours", "mean"), activities=("activity_count", "mean"),
+        stage_transitions=("stage_transition_count", "mean"),
+    ).reset_index()
+    if not outcome_summary.empty:
+        st.dataframe(outcome_summary, width="stretch")
 
-st.dataframe(
-    speed_summary_display.style.format(
-        {
-            "Average response rate": "{:.1%}",
-            "Average response time (hours)": "{:.1f}",
-            "Average CRM activities per opportunity": "{:.1f}",
-            "Average follow-ups per opportunity": "{:.1f}",
-        }
-    ),
-    width="stretch"
-)
-
-
-if len(closed_speed) > 0:
-
-    fig_response = px.scatter(
-        closed_speed,
-        x="avg_response_time_hours",
-        y="deal_duration_days",
-        color="deal_speed",
-        hover_data=[
-            "opportunity_id",
-            "sales_agent",
-            "deal_stage"
-        ],
-        title="Response Time vs Deal Duration"
-    )
-    fig_response.update_xaxes(title="Average customer response time (hours)")
-    fig_response.update_yaxes(title="Deal duration (days)")
-
-    st.plotly_chart(
-        fig_response,
-        width="stretch"
-    )
-
-
-# -----------------------------
-# Sales agent performance
-# -----------------------------
-
-st.subheader("Sales Agent Performance")
-
-agent_summary = (
-    filtered.groupby("sales_agent")
-    .agg(
+    st.subheader("Engagement-Level Comparison")
+    engagement_summary = filtered.groupby("engagement_level").agg(
         opportunities=("opportunity_id", "count"),
-        avg_deal_duration=(
-            "deal_duration_days",
-            "mean"
-        ),
-        avg_response_rate=(
-            "response_rate",
-            "mean"
-        ),
-        avg_activity_count=(
-            "activity_count",
-            "mean"
-        )
-    )
-    .reset_index()
-)
+        closed_deals=("is_closed", "sum"),
+        win_rate=("is_won", "mean"),
+        response_rate=("response_rate", "mean"),
+        activities=("activity_count", "mean"),
+    ).reset_index()
+    if not engagement_summary.empty:
+        st.dataframe(engagement_summary, width="stretch")
 
-agent_summary = agent_summary.sort_values(
-    "avg_deal_duration"
-)
+    st.subheader("Sales Agent Performance")
+    agent_summary = filtered.groupby("sales_agent").agg(
+        opportunities=("opportunity_id", "count"), avg_deal_duration=("deal_duration_days", "mean"),
+        avg_response_rate=("response_rate", "mean"), avg_activity_count=("activity_count", "mean"),
+    ).reset_index().sort_values("avg_deal_duration")
+    st.dataframe(agent_summary.head(15).style.format({
+        "avg_deal_duration": "{:.1f}", "avg_response_rate": "{:.1%}", "avg_activity_count": "{:.1f}",
+    }), width="stretch")
+    if not agent_summary.empty:
+        selected_agent = st.selectbox("Inspect a sales agent", agent_summary["sales_agent"].tolist())
+        agent = filtered[filtered["sales_agent"] == selected_agent]
+        agent_closed = agent[agent["is_closed"] == 1]
+        agent_won = agent[agent["is_won"] == 1]
+        agent_columns = st.columns(4)
+        agent_columns[0].metric("Agent Opportunities", f"{len(agent):,}")
+        agent_columns[1].metric("Agent Win Rate", f"{len(agent_won) / len(agent_closed) * 100:.1f}%" if len(agent_closed) else "0.0%")
+        agent_columns[2].metric("Agent Response Rate", f"{agent['response_rate'].mean():.1%}")
+        agent_columns[3].metric("Agent Activities", f"{agent['activity_count'].mean():.1f}")
 
-agent_summary_display = agent_summary.rename(
-    columns={
-        "sales_agent": "Sales agent",
-        "opportunities": "Opportunities",
-        "avg_deal_duration": "Average deal duration (days)",
-        "avg_response_rate": "Average response rate",
-        "avg_activity_count": "Average CRM activities per opportunity",
-    }
-)
+    st.subheader("Deal Duration by Product")
+    product_summary = closed.groupby("product").agg(avg_duration=("deal_duration_days", "mean"), deals=("opportunity_id", "count")).reset_index()
+    if not product_summary.empty:
+        st.plotly_chart(px.bar(product_summary, x="product", y="avg_duration", title="Average Deal Duration by Product"), width="stretch")
 
-st.dataframe(
-    agent_summary_display.head(15).style.format(
-        {
-            "Average deal duration (days)": "{:.1f}",
-            "Average response rate": "{:.1%}",
-            "Average CRM activities per opportunity": "{:.1f}",
-        }
-    ),
-    width="stretch"
-)
+    show_opportunity_explorer(filtered)
 
-
-# -----------------------------
-# Product analysis
-# -----------------------------
-
-st.subheader("Deal Duration by Product")
-
-product_summary = (
-    closed.groupby("product")
-    .agg(
-        avg_duration=(
-            "deal_duration_days",
-            "mean"
-        ),
-        deals=(
-            "opportunity_id",
-            "count"
-        )
-    )
-    .reset_index()
-)
-
-fig_product = px.bar(
-    product_summary,
-    x="product",
-    y="avg_duration",
-    title="Average Deal Duration by Product"
-)
-
-st.plotly_chart(
-    fig_product,
-    width="stretch"
-)
-
-
-# -----------------------------
-# Coaching insights
-# -----------------------------
-
-st.subheader("Coaching Signals")
-
-if len(speed_summary) >= 2:
-
-    fast = speed_summary[
-        speed_summary["deal_speed"] == "Fast"
-    ]
-
-    slow = speed_summary[
-        speed_summary["deal_speed"] == "Slow"
-    ]
-
+    st.subheader("Coaching Signals")
+    fast = speed_summary[speed_summary["deal_speed"] == "Fast"]
+    slow = speed_summary[speed_summary["deal_speed"] == "Slow"]
     if not fast.empty and not slow.empty:
+        st.write(f"- Fast deals show a {(fast['response_rate'].iloc[0] - slow['response_rate'].iloc[0]):.1%} difference in average response rate compared with slow deals.")
+        st.write(f"- The observed average response-time difference is {abs(fast['avg_response_time'].iloc[0] - slow['avg_response_time'].iloc[0]):.1f} hours.")
+        st.write(f"- Fast deals average {(fast['activity_count'].iloc[0] - slow['activity_count'].iloc[0]):.1f} more CRM activities than slow deals.")
+    else:
+        st.info("Coaching comparisons need both Fast and Slow closed-deal groups.")
+    st.warning("Behavioural history may be simulated for analytical prototyping. Treat these signals as associations, not causal conclusions.")
 
-        response_difference = (
-            fast["response_rate"].iloc[0]
-            - slow["response_rate"].iloc[0]
-        )
 
-        response_time_difference = (
-            fast["avg_response_time"].iloc[0]
-            - slow["avg_response_time"].iloc[0]
-        )
+demo_data = load_demo_data()
+if demo_data.empty:
+    st.error("Analytics database not found. Run `.venv/bin/python src/load_database.py` first.")
+    st.stop()
 
-        activity_difference = (
-            fast["activity_count"].iloc[0]
-            - slow["activity_count"].iloc[0]
-        )
-
-        st.write(
-            f"- Fast deals show a "
-            f"{response_difference:.1%} difference in "
-            f"average response rate compared with slow deals."
-        )
-
-        st.write(
-            f"- The difference in average response time "
-            f"between fast and slow deals is "
-            f"{abs(response_time_difference):.1f} hours."
-        )
-
-        st.write(
-            f"- Fast deals average "
-            f"{activity_difference:.1f} more CRM activities "
-            f"than slow deals."
-        )
-
-st.warning(
-    "Behavioural history is simulated for analytical "
-    "prototyping. These signals should be treated as "
-    "associations, not causal conclusions."
-)
+st.sidebar.header("Dataset")
+dataset_mode = st.sidebar.radio("View", ["Demo Dataset", "Uploaded Dataset"])
+if dataset_mode == "Uploaded Dataset":
+    show_upload_panel()
+    if "uploaded_features" not in st.session_state:
+        st.info("Upload and process a sales_pipeline.csv file to view uploaded analytics.")
+        st.stop()
+    current_data = st.session_state["uploaded_features"]
+    show_dashboard(current_data, "Uploaded Dataset")
+else:
+    show_dashboard(demo_data, "Demo Dataset")
