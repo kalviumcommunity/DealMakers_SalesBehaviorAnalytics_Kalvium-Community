@@ -37,5 +37,6 @@ To validate without writing cleaned copies:
 .venv/bin/python src/data_preparation.py --check-only
 ```
 
-The feature-engineering stage will consume these standardised datasets in the
-next pipeline increment.
+The feature-engineering stage (`src/feature_engineering.py`) consumes these
+standardised datasets to build `data/processed/opportunity_features.csv` — see
+[`docs/feature-engineering.md`](./feature-engineering.md).

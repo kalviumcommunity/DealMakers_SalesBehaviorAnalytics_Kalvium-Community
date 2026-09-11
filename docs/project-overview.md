@@ -112,4 +112,10 @@ Since this behavioral data is unavailable publicly, the team plans to **simulate
 | [`docs/getting-started.md`](./getting-started.md) | How to install, set up, and run the project locally |
 | [`docs/dataset-source.md`](./dataset-source.md) | Dataset origin, files, and field descriptions |
 | [`docs/project-overview.md`](./project-overview.md) | Project context, goals, and tech stack (this file) |
-| [`README.md`](../README.md) | Team charter and working agreements |
+| [`docs/PRD_v1.md`](./PRD_v1.md) | Product requirements: problem, users, features, constraints |
+| [`docs/PIPELINE_DESIGN.md`](./PIPELINE_DESIGN.md) | End-to-end pipeline diagram, raw data to dashboard |
+| [`docs/behavioural-data-design.md`](./behavioural-data-design.md) | Design of the simulated email, activity, and stage-history data |
+| [`docs/data-quality.md`](./data-quality.md) | Data preparation, validation rules, and quality checks |
+| [`docs/feature-engineering.md`](./feature-engineering.md) | Opportunity-level feature definitions |
+| [`docs/database.md`](./database.md) | SQLite analytical layer used by the dashboard and SQL queries |
+| [`README.md`](../README.md) | Team charter, dashboard features, and run commands |

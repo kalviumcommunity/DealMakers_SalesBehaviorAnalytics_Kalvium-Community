@@ -54,75 +54,71 @@ python -m venv .venv
 ## 3. Install Dependencies
 
 ```bash
-pip install pandas
-```
-
-The project currently uses the following Python packages:
-
-| Package | Purpose |
-|---------|---------|
-| `pandas` | Data loading, manipulation, and exploratory analysis |
-
-As the project grows, a `requirements.txt` will be added. You can then install everything at once with:
-
-```bash
 pip install -r requirements.txt
 ```
 
----
-
-## 4. Prepare the Dataset
-
-The raw data files are already included in the repository under `data/raw/`. Verify they are present:
-
-```
-data/
-└── raw/
-    ├── sales_pipeline.csv    ← Main analysis dataset (8,800 sales opportunities)
-    ├── accounts.csv          ← Company/account information
-    ├── products.csv          ← Product catalogue
-    ├── sales_teams.csv       ← Sales agent and team info
-    └── data_dictionary.csv   ← Field definitions
-```
-
-> **Source:** CRM Sales Opportunities — Public dataset from [Kaggle](https://www.kaggle.com/).
-> See [`docs/dataset-source.md`](./dataset-source.md) for full details.
+This installs pandas, Streamlit, Plotly, and everything else the pipeline and dashboard need.
 
 ---
 
-## 5. Run the Analysis Script
+## 4. Rebuild the Demo Dataset
 
-Make sure you run the script **from the root of the repository** so that the relative data paths resolve correctly:
+The raw source files are already included under `data/raw/`, but the generated
+demo outputs (simulated behavioural data, cleaned files, feature dataset, and
+SQLite database) are not committed to the repository. Build them by running
+the pipeline scripts in order from the project root:
 
 ```bash
-# From the project root directory
-python src/profile_data.py
+.venv/bin/python src/profile_data.py
+.venv/bin/python src/simulate_data.py
+.venv/bin/python src/data_preparation.py
+.venv/bin/python src/feature_engineering.py
+.venv/bin/python src/load_database.py
 ```
 
-### Expected Output
+| Step | Script | Produces |
+|------|--------|----------|
+| Profile | `src/profile_data.py` | Console EDA summary of the raw pipeline data |
+| Simulate | `src/simulate_data.py` | `data/raw/email_history.csv`, `crm_activities.csv`, `stage_history.csv` |
+| Prepare | `src/data_preparation.py` | `data/processed/cleaned/`, `data/processed/data_quality_report.json` |
+| Engineer features | `src/feature_engineering.py` | `data/processed/opportunity_features.csv` |
+| Load database | `src/load_database.py` | `data/processed/sales_analytics.db` |
 
-Running the script will print the following to your terminal:
-
-- Dataset shape (rows × columns)
-- Column names
-- First 5 rows preview
-- Data types for each column
-- Missing value counts per column
-- Distribution of deal stages
-- Full data dictionary
-- Missing `close_date` breakdown by deal stage
-- Missing `close_value` breakdown by deal stage
-- Missing `engage_date` breakdown by deal stage
-- Count of closed deals (Won / Lost)
-- Win rate among closed deals (%)
-- Deal duration statistics (days from engage to close)
-- Close value statistics
-- Top 10 sales agents by deal count
-- Product distribution
+See [`docs/PIPELINE_DESIGN.md`](./PIPELINE_DESIGN.md) for the full pipeline diagram and
+[`docs/feature-engineering.md`](./feature-engineering.md) / [`docs/data-quality.md`](./data-quality.md)
+for what each stage does.
 
 ---
 
-## 6. Deactivate the Virtual Environment
+## 5. Run the Dashboard
+
+```bash
+.venv/bin/streamlit run app.py
+```
+
+This opens the Streamlit dashboard in your browser (defaults to
+`http://localhost:8501`). The dashboard reads from
+`data/processed/sales_analytics.db`, so step 4 must complete first.
+
+The dashboard includes an Overview, Behaviour Analysis, Trends Over Time,
+Sales Agent Analysis, Opportunity Explorer, Data Upload, and Coaching Signals.
+See the [README](../README.md) for a full feature list and the upload contract.
+
+---
+
+## 6. Run the Tests
+
+```bash
+python -m unittest discover -p "test_*.py" -v
+```
+
+This runs the full test suite (upload validation and feature-engineering
+tests). The same command runs automatically in CI on every push and pull
+request against `main` — see `.github/workflows/tests.yml`.
+
+---
+
+## 7. Deactivate the Virtual Environment
 
 When you are done working, deactivate the virtual environment:
 
@@ -137,23 +133,27 @@ deactivate
 ```
 DealMakers_SalesBehaviorAnalytics_Kalvium-Community/
 │
+├── .github/workflows/          # CI: runs the test suite on push/PR
 ├── data/
-│   └── raw/                    # Raw CSV datasets
-│       ├── sales_pipeline.csv
-│       ├── accounts.csv
-│       ├── products.csv
-│       ├── sales_teams.csv
-│       └── data_dictionary.csv
-│
+│   ├── raw/                    # Source CRM files + generated behavioural files
+│   └── processed/              # Cleaned files, feature dataset, SQLite database
 ├── docs/                       # Project documentation
 │   ├── getting-started.md      ← You are here
 │   ├── dataset-source.md       # Dataset origin and field descriptions
-│   └── project-overview.md     # Project context and goals
-│
-├── src/                        # Python source code
-│   └── profile_data.py         # Data profiling and EDA script
-│
-├── .gitignore
+│   ├── project-overview.md     # Project context and goals
+│   ├── PIPELINE_DESIGN.md      # End-to-end pipeline diagram
+│   ├── behavioural-data-design.md  # Design of the simulated behavioural data
+│   ├── data-quality.md         # Validation rules and quality checks
+│   ├── feature-engineering.md  # Opportunity feature definitions
+│   ├── database.md             # SQLite analytical layer
+│   └── PRD_v1.md               # Product requirements
+├── sql/kpis.sql                 # Reusable KPI queries against opportunity_features
+├── src/                         # Profiling, simulation, preparation, feature
+│   │                             engineering, database loading, upload processing
+├── app.py                       # Streamlit dashboard
+├── test_upload_processing.py    # Upload validation tests
+├── test_feature_engineering.py  # Feature engineering tests
+├── requirements.txt
 └── README.md
 ```
 
@@ -161,15 +161,19 @@ DealMakers_SalesBehaviorAnalytics_Kalvium-Community/
 
 ## Troubleshooting
 
-### `ModuleNotFoundError: No module named 'pandas'`
-You forgot to install dependencies or your virtual environment is not active.
+### `ModuleNotFoundError: No module named 'streamlit'` (or `pandas`, `plotly`, etc.)
+Your virtual environment is not active, or dependencies were not installed.
 ```bash
-# Activate the venv first, then:
-pip install pandas
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
+### `Analytics database not found. Run src/load_database.py first.`
+You skipped step 4. Run the five pipeline scripts in order from the project root.
+
 ### `FileNotFoundError: data/raw/sales_pipeline.csv`
-You are not running the script from the **project root**. Always `cd` into the repo root before running `python src/profile_data.py`.
+You are not running the script from the **project root**. Always `cd` into the
+repo root before running any `src/*.py` script.
 
 ### `python: command not found` (Linux/macOS)
 Try `python3` instead:
