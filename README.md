@@ -25,11 +25,14 @@ The demo dataset contains 8,800 opportunities. Run the existing preparation scri
 The application contains:
 
 - **Overview:** pipeline stages, opportunity counts, closed and won deals, win rate, duration, and revenue.
+- **Filters:** sales agent, deal stage, product, account, and an engagement date range.
 - **Behaviour Analysis:** response rates, response times, activities, deal speed, and Won versus Lost comparisons.
+- **Trends Over Time:** monthly opportunity volume and monthly win rate for closed deals.
 - **Sales Agent Analysis:** descriptive comparisons of agent opportunities, activities, responses, and duration.
 - **Opportunity Explorer:** a complete profile for one selected opportunity.
 - **Data Upload:** validation, preview, and in-memory processing of compatible CSV files.
 - **Coaching Signals:** descriptive differences between observed groups, without predictive recommendations.
+- **CSV export:** download the filtered opportunities, agent summary, and product summary as CSV files.
 
 Run the dashboard with:
 
@@ -63,6 +66,14 @@ Uploaded data is processed in memory in the current Streamlit session. It does n
 - `data/processed/`: cleaned files, feature data, quality report, and local SQLite database.
 - `sql/kpis.sql`: reusable KPI queries.
 - `docs/`: pipeline, data quality, feature, database, source, and product documentation.
+- `test_upload_processing.py`, `test_feature_engineering.py`: unit tests, run via `python -m unittest discover -p "test_*.py"`.
+- `.github/workflows/tests.yml`: CI workflow that runs the test suite on every push and pull request to `main`.
+
+## Testing
+
+```bash
+python -m unittest discover -p "test_*.py" -v
+```
 
 ## Team
 
