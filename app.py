@@ -9,6 +9,7 @@ from src.upload_processing import process_uploaded_dataset
 
 
 DB_PATH = Path("data/processed/sales_analytics.db")
+KPI_SQL_PATH = Path("sql/kpis.sql")
 UPLOAD_NAMES = [
     "sales_pipeline.csv",
     "email_history.csv",
@@ -40,6 +41,32 @@ def load_demo_data() -> pd.DataFrame:
         return pd.DataFrame()
     with sqlite3.connect(DB_PATH) as connection:
         return pd.read_sql("SELECT * FROM opportunity_features", connection)
+
+
+@st.cache_data
+def load_kpi_queries() -> dict[str, str]:
+    """Parse sql/kpis.sql into {comment title: query text} for on-dashboard transparency."""
+    if not KPI_SQL_PATH.exists():
+        return {}
+    queries: dict[str, str] = {}
+    title, lines = None, []
+    for line in KPI_SQL_PATH.read_text().splitlines():
+        if line.startswith("-- "):
+            if title and lines:
+                queries[title] = "\n".join(lines).strip()
+            title, lines = line[3:].strip(), []
+        elif title is not None:
+            lines.append(line)
+    if title and lines:
+        queries[title] = "\n".join(lines).strip()
+    return queries
+
+
+def show_sql(title: str) -> None:
+    query = load_kpi_queries().get(title)
+    if query:
+        with st.expander("How is this calculated? (SQL)"):
+            st.code(query, language="sql")
 
 
 def show_upload_panel() -> None:
@@ -108,20 +135,42 @@ def apply_filters(data: pd.DataFrame) -> pd.DataFrame:
     return filtered
 
 
-def show_opportunity_explorer(data: pd.DataFrame) -> None:
-    st.subheader("Opportunity Explorer")
-    choices = data["opportunity_id"].astype(str).tolist()
-    selected = st.selectbox("Select an opportunity", ["Select an opportunity"] + choices)
-    if selected == "Select an opportunity":
-        st.caption("Select an opportunity to inspect its sales and behavioural profile.")
-        return
-
-    opportunity = data[data["opportunity_id"].astype(str).eq(selected)].iloc[0]
+def _opportunity_detail(data: pd.DataFrame, opportunity_id: str) -> pd.DataFrame:
+    opportunity = data[data["opportunity_id"].astype(str).eq(opportunity_id)].iloc[0]
     available = [column for column in DETAIL_COLUMNS if column in opportunity.index]
     detail = opportunity[available].to_frame("Value")
     detail.index = [column.replace("_", " ").title() for column in detail.index]
     detail.loc["Behavioural History Available"] = "Yes" if opportunity["has_behavioural_history"] else "No history available"
-    st.dataframe(detail, width="stretch")
+    return detail
+
+
+def show_opportunity_explorer(data: pd.DataFrame) -> None:
+    st.subheader("Opportunity Explorer")
+    choices = data["opportunity_id"].astype(str).tolist()
+    no_selection = "Select an opportunity"
+
+    compare = st.checkbox("Compare two opportunities side by side")
+    if not compare:
+        selected = st.selectbox("Select an opportunity", [no_selection] + choices)
+        if selected == no_selection:
+            st.caption("Select an opportunity to inspect its sales and behavioural profile.")
+            return
+        st.dataframe(_opportunity_detail(data, selected), width="stretch")
+        return
+
+    left_column, right_column = st.columns(2)
+    with left_column:
+        first = st.selectbox("First opportunity", [no_selection] + choices, key="compare_first")
+    with right_column:
+        second = st.selectbox("Second opportunity", [no_selection] + choices, key="compare_second")
+
+    if first == no_selection or second == no_selection:
+        st.caption("Select two opportunities to compare their sales and behavioural profiles.")
+        return
+
+    comparison = _opportunity_detail(data, first).rename(columns={"Value": first})
+    comparison[second] = _opportunity_detail(data, second)["Value"]
+    st.dataframe(comparison, width="stretch")
 
 
 def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
@@ -163,6 +212,7 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
         st.info("No opportunities match the current filters.")
     else:
         st.plotly_chart(px.bar(stage_counts, x="deal_stage", y="opportunities", title="Opportunities by Deal Stage"), width="stretch")
+    show_sql("Pipeline funnel")
 
     st.subheader("Trends Over Time")
     engaged = filtered.copy()
@@ -216,6 +266,7 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
             closed, x="avg_response_time_hours", y="deal_duration_days", color="deal_speed",
             hover_data=["opportunity_id", "sales_agent", "deal_stage"], title="Response Time vs Deal Duration",
         ), width="stretch")
+    show_sql("Behaviour by deal speed")
 
     st.subheader("Won vs Lost Behaviour")
     outcome_summary = closed.groupby("deal_stage").agg(
@@ -225,6 +276,7 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
     ).reset_index()
     if not outcome_summary.empty:
         st.dataframe(outcome_summary, width="stretch")
+    show_sql("Won versus Lost behavioural comparison (closed opportunities only)")
 
     st.subheader("Engagement-Level Comparison")
     engagement_summary = filtered.groupby("engagement_level").agg(
@@ -236,6 +288,7 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
     ).reset_index()
     if not engagement_summary.empty:
         st.dataframe(engagement_summary, width="stretch")
+    show_sql("Win rate by descriptive engagement level")
 
     st.subheader("Sales Agent Performance")
     agent_summary = filtered.groupby("sales_agent").agg(
@@ -259,6 +312,7 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
         agent_columns[1].metric("Agent Win Rate", f"{len(agent_won) / len(agent_closed) * 100:.1f}%" if len(agent_closed) else "0.0%")
         agent_columns[2].metric("Agent Response Rate", f"{agent['response_rate'].mean():.1%}")
         agent_columns[3].metric("Agent Activities", f"{agent['activity_count'].mean():.1f}")
+    show_sql("Sales-agent behavioural and outcome comparison")
 
     st.subheader("Deal Duration by Product")
     product_summary = closed.groupby("product").agg(avg_duration=("deal_duration_days", "mean"), deals=("opportunity_id", "count")).reset_index()
@@ -268,6 +322,7 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
             "Download product summary (CSV)", data=to_csv_bytes(product_summary),
             file_name="product_summary.csv", mime="text/csv", key="download_product_summary",
         )
+    show_sql("Product outcome and behavioural comparison")
 
     show_opportunity_explorer(filtered)
 

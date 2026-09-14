@@ -36,7 +36,7 @@ The dataset contains the following pipeline stages:
 - Won
 - Lost
 
-The `opportunity_id` will be the primary link between the existing sales data and the synthetic behavioural data.
+The `opportunity_id` is the primary link between the existing sales data and the synthetic behavioural data.
 
 ---
 
@@ -50,11 +50,13 @@ The project requires analysis of:
 - CRM activities
 - deal-stage transitions
 
-Therefore, synthetic behavioural datasets will be generated and linked to the real opportunity records.
+Therefore, synthetic behavioural datasets are generated (`src/simulate_data.py`)
+and linked to the real opportunity records by `opportunity_id`.
 
-The original source dataset will remain unchanged.
+The original source dataset remains unchanged.
 
-Synthetic data will be clearly documented as simulated data.
+Synthetic data is clearly documented as simulated data — see the dashboard's
+"How to read this dashboard" note and the warnings on Coaching Signals.
 
 ---
 
@@ -88,7 +90,7 @@ File:
 
 ### Purpose
 
-Email history will allow analysis of:
+Email history supports analysis of:
 
 - response rate
 - average response time
@@ -135,7 +137,7 @@ File:
 
 ### Purpose
 
-CRM activity data will allow analysis of:
+CRM activity data supports analysis of:
 
 - activity frequency
 - activities per opportunity
@@ -172,7 +174,7 @@ Prospecting → Engaging → Lost
 
 ### Purpose
 
-Stage history will allow analysis of:
+Stage history supports analysis of:
 
 - time spent in each stage
 - stage conversion rates
@@ -184,7 +186,7 @@ Stage history will allow analysis of:
 
 # 7. Relationship Between the Datasets
 
-The datasets will be connected using `opportunity_id`.
+The datasets are connected using `opportunity_id`.
 
 ```text
 sales_pipeline

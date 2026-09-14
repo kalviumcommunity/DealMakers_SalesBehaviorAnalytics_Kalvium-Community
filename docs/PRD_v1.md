@@ -52,3 +52,19 @@ opportunity IDs. Errors must be understandable to a non-technical user.
 - Pipeline-only and full behavioural uploads both produce analytics.
 - Invalid uploads are rejected without stack traces or permanent data changes.
 - Documentation explains the product, pipeline, upload contract, and run command.
+
+## Post-v1 Additions
+
+Shipped after this PRD was written, within the same constraints (no ML,
+predictions, or causal claims):
+
+- An engagement date-range filter alongside the existing agent, stage,
+  product, and account filters.
+- A Trends Over Time view: monthly opportunity volume and monthly win rate
+  for closed deals.
+- CSV export for the filtered opportunities, agent summary, and product
+  summary tables.
+- Side-by-side comparison of two opportunities in the Opportunity Explorer.
+- Inline "How is this calculated?" SQL, sourced directly from `sql/kpis.sql`,
+  next to each descriptive comparison on the dashboard.
+- A CI workflow that runs the test suite on every push and pull request to `main`.
