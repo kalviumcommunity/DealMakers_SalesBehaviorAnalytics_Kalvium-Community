@@ -66,9 +66,10 @@ Uploaded data is processed in memory in the current Streamlit session. It does n
 - `src/`: profiling, simulation, preparation, feature engineering, database loading, and upload processing.
 - `data/raw/`: source CRM files and generated behavioural files.
 - `data/processed/`: cleaned files, feature data, quality report, and local SQLite database.
-- `sql/kpis.sql`: reusable KPI queries.
+- `sql/kpis.sql`: reusable KPI queries, including JOIN and window-function (`RANK`, `LAG`) queries.
+- `sql/views.sql`: `agent_team_performance` and `product_line_performance` views, joining `opportunity_features` to `sales_teams` and `products`.
 - `docs/`: pipeline, data quality, feature, database, source, and product documentation.
-- `test_upload_processing.py`, `test_feature_engineering.py`, `test_email_report.py`: unit tests, run via `python -m unittest discover -p "test_*.py"`.
+- `test_upload_processing.py`, `test_feature_engineering.py`, `test_email_report.py`, `test_numeric_analysis.py`, `test_load_database.py`: unit tests, run via `python -m unittest discover -p "test_*.py"`.
 - `.github/workflows/tests.yml`: CI workflow that runs the test suite on every push and pull request to `main`.
 
 ## Testing

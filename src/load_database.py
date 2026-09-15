@@ -7,7 +7,9 @@ import pandas as pd
 
 
 CSV_PATH = Path("data/processed/opportunity_features.csv")
+RAW_DATA = Path("data/raw")
 DB_PATH = Path("data/processed/sales_analytics.db")
+VIEWS_PATH = Path("sql/views.sql")
 TABLE_NAME = "opportunity_features"
 REQUIRED_COLUMNS = {
     "opportunity_id", "sales_agent", "product", "deal_stage", "is_closed", "is_won",
@@ -25,17 +27,32 @@ def load_features(csv_path: Path = CSV_PATH) -> pd.DataFrame:
     return features
 
 
-def build_database(features: pd.DataFrame, db_path: Path = DB_PATH) -> None:
+def build_database(features: pd.DataFrame, db_path: Path = DB_PATH, raw_data: Path = RAW_DATA, views_path: Path = VIEWS_PATH) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    sales_teams = pd.read_csv(raw_data / "sales_teams.csv")
+    products = pd.read_csv(raw_data / "products.csv")
+
     with sqlite3.connect(db_path) as connection:
         features.to_sql(TABLE_NAME, connection, if_exists="replace", index=False)
         connection.execute("CREATE UNIQUE INDEX idx_opportunity_id ON opportunity_features(opportunity_id)")
         connection.execute("CREATE INDEX idx_deal_stage ON opportunity_features(deal_stage)")
         connection.execute("CREATE INDEX idx_sales_agent ON opportunity_features(sales_agent)")
         connection.execute("CREATE INDEX idx_product ON opportunity_features(product)")
+
+        sales_teams.to_sql("sales_teams", connection, if_exists="replace", index=False)
+        connection.execute("CREATE UNIQUE INDEX idx_sales_teams_agent ON sales_teams(sales_agent)")
+
+        products.to_sql("products", connection, if_exists="replace", index=False)
+        connection.execute("CREATE UNIQUE INDEX idx_products_product ON products(product)")
+
         connection.execute("DROP TABLE IF EXISTS pipeline_metadata")
         connection.execute("CREATE TABLE pipeline_metadata (dataset_name TEXT PRIMARY KEY, row_count INTEGER NOT NULL)")
         connection.execute("INSERT INTO pipeline_metadata VALUES (?, ?)", (TABLE_NAME, len(features)))
+        connection.execute("INSERT INTO pipeline_metadata VALUES (?, ?)", ("sales_teams", len(sales_teams)))
+        connection.execute("INSERT INTO pipeline_metadata VALUES (?, ?)", ("products", len(products)))
+
+        if views_path.exists():
+            connection.executescript(views_path.read_text())
 
 
 def main() -> None:

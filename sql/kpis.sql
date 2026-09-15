@@ -164,3 +164,45 @@ SELECT
 FROM opportunity_features
 GROUP BY product
 ORDER BY opportunities DESC;
+
+
+-- Regional office and manager performance (JOIN to sales_teams; see sql/views.sql)
+SELECT * FROM agent_team_performance
+ORDER BY win_rate_pct DESC;
+
+
+-- Rank agents by win rate within their own regional office (window function: RANK)
+SELECT
+    regional_office,
+    sales_agent,
+    win_rate_pct,
+    RANK() OVER (PARTITION BY regional_office ORDER BY win_rate_pct DESC) AS rank_in_office
+FROM agent_team_performance
+ORDER BY regional_office, rank_in_office;
+
+
+-- Month-over-month win rate change for closed deals (CTE + window function: LAG)
+WITH monthly_outcomes AS (
+    SELECT
+        strftime('%Y-%m', close_date) AS close_month,
+        SUM(is_won) AS won,
+        SUM(is_closed) AS closed
+    FROM opportunity_features
+    WHERE is_closed = 1 AND close_date IS NOT NULL
+    GROUP BY close_month
+)
+SELECT
+    close_month,
+    ROUND(100.0 * won / NULLIF(closed, 0), 2) AS win_rate_pct,
+    ROUND(100.0 * won / NULLIF(closed, 0), 2)
+        - LAG(ROUND(100.0 * won / NULLIF(closed, 0), 2)) OVER (ORDER BY close_month)
+        AS win_rate_change_pct
+FROM monthly_outcomes
+ORDER BY close_month;
+
+
+-- Product line performance versus list price (LEFT JOIN to products; see sql/views.sql)
+-- LEFT, not INNER: "GTXPro" in opportunity_features does not match "GTX Pro"
+-- in products, so series/list_price are NULL for that product's rows here.
+SELECT * FROM product_line_performance
+ORDER BY opportunities DESC;

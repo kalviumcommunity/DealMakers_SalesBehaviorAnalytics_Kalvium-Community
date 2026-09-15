@@ -8,7 +8,13 @@ descriptive behavioural aggregates. There is no predictive model.
 
 - `is_closed`, `is_won`, and `deal_duration_days` make outcome KPIs consistent.
 - `deal_speed` divides closed-deal duration into Fast, Medium, and Slow thirds;
-  open opportunities are labelled `Open`.
+  open opportunities are labelled `Open`. Tier assignment uses `numpy.select`
+  over vectorised boolean conditions rather than sequential `.loc` writes.
+- `is_close_value_outlier` flags won deals whose `close_value` falls outside
+  the IQR fences (1.5x interquartile range) of all won deals, using
+  `src/numeric_analysis.py`'s NumPy-vectorised `iqr_outliers`. It is
+  descriptive only - flagged deals are not removed or treated differently
+  anywhere else in the pipeline.
 
 ## Behavioural fields
 
