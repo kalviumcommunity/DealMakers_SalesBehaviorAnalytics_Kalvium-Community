@@ -6,3 +6,4 @@ __pycache__/
 data/processed/cleaned/
 data/processed/data_quality_report.json
 data/processed/*.db
+data/processed/pipeline.log
