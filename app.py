@@ -1,4 +1,7 @@
+import io
 import sqlite3
+import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -72,11 +75,12 @@ def show_sql(title: str) -> None:
 
 def show_upload_panel() -> None:
     st.subheader("Upload New Data")
-    st.caption("Upload a pipeline file and any available behavioural history. Files are processed in memory and do not replace the demo dataset.")
+    st.caption("Upload a pipeline file (CSV or JSON) and any available behavioural history (CSV). Files are processed in memory and do not replace the demo dataset.")
     uploads = {}
     for filename in UPLOAD_NAMES:
-        label = filename if filename == "sales_pipeline.csv" else f"{filename} (optional)"
-        uploaded = st.file_uploader(label, type="csv", key=f"upload_{filename}")
+        is_pipeline = filename == "sales_pipeline.csv"
+        label = filename if is_pipeline else f"{filename} (optional)"
+        uploaded = st.file_uploader(label, type=["csv", "json"] if is_pipeline else "csv", key=f"upload_{filename}")
         if uploaded is not None:
             uploads[filename] = uploaded
 
@@ -87,11 +91,11 @@ def show_upload_panel() -> None:
             with tab:
                 try:
                     uploaded.seek(0)
-                    preview = pd.read_csv(uploaded)
+                    preview = pd.read_json(uploaded) if uploaded.name.endswith(".json") else pd.read_csv(uploaded)
                     st.caption(f"{len(preview):,} rows | {len(preview.columns):,} columns")
                     st.dataframe(preview.head(5), width="stretch")
-                except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError) as error:
-                    st.error(f"{filename}: could not preview this CSV ({error}).")
+                except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError, ValueError) as error:
+                    st.error(f"{filename}: could not preview this file ({error}).")
 
     if st.button("Validate and process uploads", type="primary", disabled="sales_pipeline.csv" not in uploads):
         try:
@@ -107,12 +111,20 @@ def show_upload_panel() -> None:
         st.info("Uploaded dataset is ready. Select it from the Dataset selector to view its analytics.")
 
 
+FILTER_STATE_KEYS = ["filter_agents", "filter_stages", "filter_products", "filter_accounts", "filter_date_range"]
+
+
 def apply_filters(data: pd.DataFrame) -> pd.DataFrame:
     st.sidebar.header("Filters")
-    agents = st.sidebar.multiselect("Sales Agent", sorted(data["sales_agent"].dropna().unique()))
-    stages = st.sidebar.multiselect("Deal Stage", sorted(data["deal_stage"].dropna().unique()))
-    products = st.sidebar.multiselect("Product", sorted(data["product"].dropna().unique()))
-    accounts = st.sidebar.multiselect("Account", sorted(data["account"].fillna("Unknown").unique()))
+    if st.sidebar.button("Reset Filters", key="reset_filters_button"):
+        for key in FILTER_STATE_KEYS:
+            st.session_state.pop(key, None)
+        st.rerun()
+
+    agents = st.sidebar.multiselect("Sales Agent", sorted(data["sales_agent"].dropna().unique()), key="filter_agents")
+    stages = st.sidebar.multiselect("Deal Stage", sorted(data["deal_stage"].dropna().unique()), key="filter_stages")
+    products = st.sidebar.multiselect("Product", sorted(data["product"].dropna().unique()), key="filter_products")
+    accounts = st.sidebar.multiselect("Account", sorted(data["account"].fillna("Unknown").unique()), key="filter_accounts")
 
     filtered = data.copy()
     if agents:
@@ -127,7 +139,9 @@ def apply_filters(data: pd.DataFrame) -> pd.DataFrame:
     engage_dates = pd.to_datetime(data["engage_date"], errors="coerce").dropna()
     if not engage_dates.empty:
         min_date, max_date = engage_dates.min().date(), engage_dates.max().date()
-        date_range = st.sidebar.date_input("Engaged Between", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+        date_range = st.sidebar.date_input(
+            "Engaged Between", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="filter_date_range",
+        )
         if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
             engaged = pd.to_datetime(filtered["engage_date"], errors="coerce")
@@ -222,20 +236,36 @@ def show_alerts_and_reporting(data: pd.DataFrame, dataset_label: str) -> None:
             (st.success if success else st.error)(message)
 
 
-def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
-    st.title("Sales Behaviour Analytics")
-    st.caption(f"{dataset_label} | Behavioural patterns associated with deal progression and closure")
-    with st.expander("How to read this dashboard", expanded=True):
-        st.markdown(
-            "- **Response rate** is the percentage of emails that received a customer response.\n"
-            "- **Response time** is the average number of hours a customer took to reply.\n"
-            "- **Deal duration** is measured from engagement to close for closed opportunities.\n"
-            "- Behavioural history may be simulated; all findings are descriptive associations, not causal conclusions."
-        )
+def _compute_agent_summary(filtered: pd.DataFrame) -> pd.DataFrame:
+    return filtered.groupby("sales_agent").agg(
+        opportunities=("opportunity_id", "count"), avg_deal_duration=("deal_duration_days", "mean"),
+        avg_response_rate=("response_rate", "mean"), avg_activity_count=("activity_count", "mean"),
+    ).reset_index().sort_values("avg_deal_duration")
 
-    filtered = apply_filters(data)
-    closed = filtered[filtered["is_closed"] == 1]
-    won = filtered[filtered["is_won"] == 1]
+
+def _compute_product_summary(closed: pd.DataFrame) -> pd.DataFrame:
+    return closed.groupby("product").agg(
+        avg_duration=("deal_duration_days", "mean"), deals=("opportunity_id", "count"),
+    ).reset_index()
+
+
+def build_report_bundle(
+    filtered: pd.DataFrame, agent_summary: pd.DataFrame, product_summary: pd.DataFrame,
+    dataset_label: str, metrics: dict[str, str], alerts: list[dict[str, str]],
+) -> tuple[bytes, str]:
+    """Zip the filtered data, summary tables, and an HTML report into one traceable-filename download."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    safe_label = dataset_label.lower().replace(" ", "_")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("filtered_opportunities.csv", filtered.to_csv(index=False))
+        archive.writestr("agent_summary.csv", agent_summary.to_csv(index=False))
+        archive.writestr("product_summary.csv", product_summary.to_csv(index=False))
+        archive.writestr("summary_report.html", build_report_html(dataset_label, metrics, alerts))
+    return buffer.getvalue(), f"dealmakers_report_{safe_label}_{timestamp}.zip"
+
+
+def show_overview(filtered: pd.DataFrame, closed: pd.DataFrame, won: pd.DataFrame, dataset_label: str) -> None:
     win_rate = len(won) / len(closed) * 100 if len(closed) else 0
     median_duration = closed["deal_duration_days"].median() if len(closed) else 0
 
@@ -255,9 +285,23 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
     )
 
     st.divider()
-    show_alerts_and_reporting(filtered, dataset_label)
+    st.subheader("Export Full Report Bundle")
+    st.caption("Filtered data, agent and product summaries, and an HTML KPI report, zipped with a timestamped filename.")
+    agent_summary = _compute_agent_summary(filtered)
+    product_summary = _compute_product_summary(closed)
+    metrics = {
+        "Opportunities": f"{len(filtered):,}",
+        "Closed Deals": f"{len(closed):,}",
+        "Win Rate": f"{win_rate:.1f}%",
+        "Average Response Rate": f"{filtered['response_rate'].mean() * 100:.1f}%" if filtered["response_rate"].notna().any() else "N/A",
+        "Average Response Time": f"{filtered['avg_response_time_hours'].mean():.1f}h" if filtered["avg_response_time_hours"].notna().any() else "N/A",
+    }
+    alerts = evaluate_alerts(filtered, DEFAULT_THRESHOLDS)
+    bundle_bytes, bundle_name = build_report_bundle(filtered, agent_summary, product_summary, dataset_label, metrics, alerts)
+    st.download_button("Download Full Report Bundle (ZIP)", data=bundle_bytes, file_name=bundle_name, mime="application/zip")
 
-    st.divider()
+
+def show_pipeline_funnel_and_trends(filtered: pd.DataFrame, closed: pd.DataFrame) -> None:
     st.subheader("Sales Pipeline")
     stage_counts = filtered["deal_stage"].value_counts().rename_axis("deal_stage").reset_index(name="opportunities")
     if stage_counts.empty:
@@ -328,6 +372,8 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
             )
     show_sql("Month-over-month win rate change for closed deals (CTE + window function: LAG)")
 
+
+def show_distribution_and_correlation(filtered: pd.DataFrame, closed: pd.DataFrame, won: pd.DataFrame) -> None:
     st.subheader("Distribution Analysis")
     distribution_columns = st.columns(2)
     if closed["deal_duration_days"].notna().any():
@@ -356,6 +402,8 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
     else:
         st.info("Not enough numeric fields with data in the current selection to compute correlations.")
 
+
+def show_behavioural_analysis(filtered: pd.DataFrame, closed: pd.DataFrame) -> None:
     st.subheader("Behavioural Patterns by Deal Speed")
     speed_summary = closed.groupby("deal_speed").agg(
         response_rate=("response_rate", "mean"),
@@ -405,11 +453,21 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
         st.dataframe(engagement_summary, width="stretch")
     show_sql("Win rate by descriptive engagement level")
 
+    st.subheader("Coaching Signals")
+    fast = speed_summary[speed_summary["deal_speed"] == "Fast"]
+    slow = speed_summary[speed_summary["deal_speed"] == "Slow"]
+    if not fast.empty and not slow.empty:
+        st.write(f"- Fast deals show a {(fast['response_rate'].iloc[0] - slow['response_rate'].iloc[0]):.1%} difference in average response rate compared with slow deals.")
+        st.write(f"- The observed average response-time difference is {abs(fast['avg_response_time'].iloc[0] - slow['avg_response_time'].iloc[0]):.1f} hours.")
+        st.write(f"- Fast deals average {(fast['activity_count'].iloc[0] - slow['activity_count'].iloc[0]):.1f} more CRM activities than slow deals.")
+    else:
+        st.info("Coaching comparisons need both Fast and Slow closed-deal groups.")
+    st.warning("Behavioural history may be simulated for analytical prototyping. Treat these signals as associations, not causal conclusions.")
+
+
+def show_agents_and_products(filtered: pd.DataFrame, closed: pd.DataFrame) -> None:
     st.subheader("Sales Agent Performance")
-    agent_summary = filtered.groupby("sales_agent").agg(
-        opportunities=("opportunity_id", "count"), avg_deal_duration=("deal_duration_days", "mean"),
-        avg_response_rate=("response_rate", "mean"), avg_activity_count=("activity_count", "mean"),
-    ).reset_index().sort_values("avg_deal_duration")
+    agent_summary = _compute_agent_summary(filtered)
     st.dataframe(agent_summary.head(15).style.format({
         "avg_deal_duration": "{:.1f}", "avg_response_rate": "{:.1%}", "avg_activity_count": "{:.1f}",
     }), width="stretch")
@@ -430,7 +488,7 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
     show_sql("Sales-agent behavioural and outcome comparison")
 
     st.subheader("Deal Duration by Product")
-    product_summary = closed.groupby("product").agg(avg_duration=("deal_duration_days", "mean"), deals=("opportunity_id", "count")).reset_index()
+    product_summary = _compute_product_summary(closed)
     if not product_summary.empty:
         st.plotly_chart(px.bar(product_summary, x="product", y="avg_duration", title="Average Deal Duration by Product"), width="stretch")
         st.download_button(
@@ -439,18 +497,51 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
         )
     show_sql("Product outcome and behavioural comparison")
 
-    show_opportunity_explorer(filtered)
 
-    st.subheader("Coaching Signals")
-    fast = speed_summary[speed_summary["deal_speed"] == "Fast"]
-    slow = speed_summary[speed_summary["deal_speed"] == "Slow"]
-    if not fast.empty and not slow.empty:
-        st.write(f"- Fast deals show a {(fast['response_rate'].iloc[0] - slow['response_rate'].iloc[0]):.1%} difference in average response rate compared with slow deals.")
-        st.write(f"- The observed average response-time difference is {abs(fast['avg_response_time'].iloc[0] - slow['avg_response_time'].iloc[0]):.1f} hours.")
-        st.write(f"- Fast deals average {(fast['activity_count'].iloc[0] - slow['activity_count'].iloc[0]):.1f} more CRM activities than slow deals.")
-    else:
-        st.info("Coaching comparisons need both Fast and Slow closed-deal groups.")
-    st.warning("Behavioural history may be simulated for analytical prototyping. Treat these signals as associations, not causal conclusions.")
+DASHBOARD_PAGES = [
+    "Overview",
+    "Pipeline, Funnel & Trends",
+    "Distribution & Correlation",
+    "Behavioural Analysis",
+    "Agents & Products",
+    "Opportunity Explorer",
+    "Alerts & Reporting",
+]
+
+
+def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
+    st.title("Sales Behaviour Analytics")
+    st.caption(f"{dataset_label} | Behavioural patterns associated with deal progression and closure")
+    with st.expander("How to read this dashboard", expanded=True):
+        st.markdown(
+            "- **Response rate** is the percentage of emails that received a customer response.\n"
+            "- **Response time** is the average number of hours a customer took to reply.\n"
+            "- **Deal duration** is measured from engagement to close for closed opportunities.\n"
+            "- Behavioural history may be simulated; all findings are descriptive associations, not causal conclusions."
+        )
+
+    filtered = apply_filters(data)
+    closed = filtered[filtered["is_closed"] == 1]
+    won = filtered[filtered["is_won"] == 1]
+
+    st.sidebar.header("Dashboard Section")
+    page = st.sidebar.radio("Go to", DASHBOARD_PAGES, key="dashboard_page", label_visibility="collapsed")
+    st.divider()
+
+    if page == "Overview":
+        show_overview(filtered, closed, won, dataset_label)
+    elif page == "Pipeline, Funnel & Trends":
+        show_pipeline_funnel_and_trends(filtered, closed)
+    elif page == "Distribution & Correlation":
+        show_distribution_and_correlation(filtered, closed, won)
+    elif page == "Behavioural Analysis":
+        show_behavioural_analysis(filtered, closed)
+    elif page == "Agents & Products":
+        show_agents_and_products(filtered, closed)
+    elif page == "Opportunity Explorer":
+        show_opportunity_explorer(filtered)
+    elif page == "Alerts & Reporting":
+        show_alerts_and_reporting(filtered, dataset_label)
 
 
 demo_data = load_demo_data()
