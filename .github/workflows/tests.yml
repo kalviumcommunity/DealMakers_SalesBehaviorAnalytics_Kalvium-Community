@@ -1,4 +1,4 @@
-name: Tests
+name: Tests and Data Validation
 
 on:
   push:
@@ -21,3 +21,6 @@ jobs:
 
       - name: Run tests
         run: python -m unittest discover -p "test_*.py" -v
+
+      - name: Validate data quality
+        run: python src/data_preparation.py --check-only

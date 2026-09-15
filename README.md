@@ -10,7 +10,22 @@ This is not a machine-learning or prediction system. Behavioural data may be sim
 CSV data -> preparation and validation -> opportunity features -> SQLite and SQL -> Streamlit dashboard
 ```
 
-The demo dataset contains 8,800 opportunities. Run the existing preparation scripts when rebuilding the demo outputs:
+The demo dataset contains 8,800 opportunities. Rebuild the demo outputs in one command:
+
+```bash
+.venv/bin/python src/run_pipeline.py
+```
+
+This runs profiling, simulation, preparation/validation, feature engineering,
+and database loading in order, logging each stage's duration and output to
+both the console and `data/processed/pipeline.log`. It stops at the first
+failing stage instead of building features or a database on top of bad data.
+Useful flags:
+
+- `--skip-simulate`: reuse the existing behavioural CSVs instead of regenerating them.
+- `--check-only`: validate data without writing cleaned CSV files (passed through to `data_preparation.py`).
+
+The same five scripts can still be run individually if you only need one stage:
 
 ```bash
 .venv/bin/python src/profile_data.py
@@ -69,8 +84,9 @@ Uploaded data is processed in memory in the current Streamlit session. It does n
 - `sql/kpis.sql`: reusable KPI queries, including JOIN and window-function (`RANK`, `LAG`) queries.
 - `sql/views.sql`: `agent_team_performance` and `product_line_performance` views, joining `opportunity_features` to `sales_teams` and `products`.
 - `docs/`: pipeline, data quality, feature, database, source, and product documentation.
-- `test_upload_processing.py`, `test_feature_engineering.py`, `test_email_report.py`, `test_numeric_analysis.py`, `test_load_database.py`: unit tests, run via `python -m unittest discover -p "test_*.py"`.
-- `.github/workflows/tests.yml`: CI workflow that runs the test suite on every push and pull request to `main`.
+- `test_upload_processing.py`, `test_feature_engineering.py`, `test_email_report.py`, `test_numeric_analysis.py`, `test_load_database.py`, `test_run_pipeline.py`: unit tests, run via `python -m unittest discover -p "test_*.py"`.
+- `src/run_pipeline.py`: runs the full pipeline in one command with logging and stage-by-stage failure handling.
+- `.github/workflows/tests.yml`: CI workflow that runs the test suite and the data-quality validation (`data_preparation.py --check-only`) on every push and pull request to `main`.
 
 ## Testing
 
