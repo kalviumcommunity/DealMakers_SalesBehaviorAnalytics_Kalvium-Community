@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from src.email_report import DEFAULT_THRESHOLDS, build_report_html, evaluate_alerts, send_email_report
 from src.upload_processing import process_uploaded_dataset
 
 
@@ -173,6 +174,54 @@ def show_opportunity_explorer(data: pd.DataFrame) -> None:
     st.dataframe(comparison, width="stretch")
 
 
+def show_alerts_and_reporting(data: pd.DataFrame, dataset_label: str) -> None:
+    st.subheader("Alert Monitoring")
+    st.caption("Descriptive threshold checks against the current selection - not predictions.")
+    with st.expander("Configure thresholds"):
+        threshold_columns = st.columns(3)
+        min_win_rate = threshold_columns[0].number_input(
+            "Minimum win rate (%)", 0.0, 100.0, DEFAULT_THRESHOLDS["min_win_rate"], key="threshold_win_rate",
+        )
+        min_response_rate = threshold_columns[1].number_input(
+            "Minimum response rate (%)", 0.0, 100.0, DEFAULT_THRESHOLDS["min_response_rate"], key="threshold_response_rate",
+        )
+        max_response_time = threshold_columns[2].number_input(
+            "Maximum avg response time (hours)", 0.0, 200.0, DEFAULT_THRESHOLDS["max_avg_response_time_hours"], key="threshold_response_time",
+        )
+    thresholds = {
+        "min_win_rate": min_win_rate,
+        "min_response_rate": min_response_rate,
+        "max_avg_response_time_hours": max_response_time,
+    }
+    alerts = evaluate_alerts(data, thresholds)
+    if not alerts:
+        st.success("No thresholds breached for the current selection.")
+    else:
+        for alert in alerts:
+            show = st.error if alert["severity"] == "high" else st.warning
+            show(f"[{alert['severity'].upper()}] {alert['message']}")
+
+    st.subheader("Share This Report")
+    closed = data[data["is_closed"] == 1]
+    won = data[data["is_won"] == 1]
+    win_rate = len(won) / len(closed) * 100 if len(closed) else 0
+    metrics = {
+        "Opportunities": f"{len(data):,}",
+        "Closed Deals": f"{len(closed):,}",
+        "Win Rate": f"{win_rate:.1f}%",
+        "Average Response Rate": f"{data['response_rate'].mean() * 100:.1f}%" if data["response_rate"].notna().any() else "N/A",
+        "Average Response Time": f"{data['avg_response_time_hours'].mean():.1f}h" if data["avg_response_time_hours"].notna().any() else "N/A",
+    }
+    recipient = st.text_input("Recipient email", key="report_recipient")
+    if st.button("Email this report"):
+        if not recipient:
+            st.error("Enter a recipient email address first.")
+        else:
+            html = build_report_html(dataset_label, metrics, alerts)
+            success, message = send_email_report(recipient, f"Sales Behaviour Analytics - {dataset_label}", html)
+            (st.success if success else st.error)(message)
+
+
 def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
     st.title("Sales Behaviour Analytics")
     st.caption(f"{dataset_label} | Behavioural patterns associated with deal progression and closure")
@@ -204,6 +253,9 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
         file_name="filtered_opportunities.csv",
         mime="text/csv",
     )
+
+    st.divider()
+    show_alerts_and_reporting(filtered, dataset_label)
 
     st.divider()
     st.subheader("Sales Pipeline")

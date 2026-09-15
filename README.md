@@ -33,6 +33,8 @@ The application contains:
 - **Data Upload:** validation, preview, and in-memory processing of compatible CSV files.
 - **Coaching Signals:** descriptive differences between observed groups, without predictive recommendations.
 - **CSV export:** download the filtered opportunities, agent summary, and product summary as CSV files.
+- **Alert Monitoring:** configurable win-rate, response-rate, and response-time thresholds with severity-labelled warnings.
+- **Email Reporting:** send an HTML KPI-and-alerts summary to a chosen recipient; see [docs/alerts-and-reporting.md](docs/alerts-and-reporting.md) for required SMTP environment variables.
 
 Run the dashboard with:
 
@@ -66,7 +68,7 @@ Uploaded data is processed in memory in the current Streamlit session. It does n
 - `data/processed/`: cleaned files, feature data, quality report, and local SQLite database.
 - `sql/kpis.sql`: reusable KPI queries.
 - `docs/`: pipeline, data quality, feature, database, source, and product documentation.
-- `test_upload_processing.py`, `test_feature_engineering.py`: unit tests, run via `python -m unittest discover -p "test_*.py"`.
+- `test_upload_processing.py`, `test_feature_engineering.py`, `test_email_report.py`: unit tests, run via `python -m unittest discover -p "test_*.py"`.
 - `.github/workflows/tests.yml`: CI workflow that runs the test suite on every push and pull request to `main`.
 
 ## Testing

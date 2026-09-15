@@ -118,4 +118,5 @@ Since this behavioral data is unavailable publicly, the team plans to **simulate
 | [`docs/data-quality.md`](./data-quality.md) | Data preparation, validation rules, and quality checks |
 | [`docs/feature-engineering.md`](./feature-engineering.md) | Opportunity-level feature definitions |
 | [`docs/database.md`](./database.md) | SQLite analytical layer used by the dashboard and SQL queries |
+| [`docs/alerts-and-reporting.md`](./alerts-and-reporting.md) | Threshold alert monitoring and email report configuration |
 | [`README.md`](../README.md) | Team charter, dashboard features, and run commands |
