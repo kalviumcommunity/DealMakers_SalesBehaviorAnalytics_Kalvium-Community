@@ -9,10 +9,12 @@ import plotly.express as px
 import streamlit as st
 
 from src.email_report import DEFAULT_THRESHOLDS, build_report_html, evaluate_alerts, send_email_report
+from src.load_database import build_database, load_features
 from src.upload_processing import process_uploaded_dataset
 
 
 DB_PATH = Path("data/processed/sales_analytics.db")
+FEATURES_CSV_PATH = Path("data/processed/opportunity_features.csv")
 KPI_SQL_PATH = Path("sql/kpis.sql")
 UPLOAD_NAMES = [
     "sales_pipeline.csv",
@@ -41,6 +43,15 @@ def to_csv_bytes(data: pd.DataFrame) -> bytes:
 
 @st.cache_data
 def load_demo_data() -> pd.DataFrame:
+    # data/processed/sales_analytics.db is gitignored (generated output), but
+    # opportunity_features.csv is committed - so a fresh deploy (e.g. Streamlit
+    # Community Cloud, which only has what's in git) has the CSV but not the
+    # database. Build it on first load instead of failing outright.
+    if not DB_PATH.exists() and FEATURES_CSV_PATH.exists():
+        try:
+            build_database(load_features(FEATURES_CSV_PATH))
+        except (FileNotFoundError, ValueError):
+            pass
     if not DB_PATH.exists():
         return pd.DataFrame()
     with sqlite3.connect(DB_PATH) as connection:

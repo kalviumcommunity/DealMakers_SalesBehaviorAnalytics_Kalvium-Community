@@ -27,3 +27,13 @@ on top of `agent_team_performance`.
 
 The SQLite file is generated locally and excluded from Git; recreate it from
 the committed feature dataset whenever the pipeline changes.
+
+## Deployed environments (e.g. Streamlit Community Cloud)
+
+A fresh deploy clones the repo, so it has `data/processed/opportunity_features.csv`
+(committed) but not `sales_analytics.db` (gitignored). `app.py`'s
+`load_demo_data()` detects this and calls `build_database()` automatically on
+first load, using the committed CSV and the committed `data/raw/sales_teams.csv`
+/ `products.csv`. This keeps the generated `.db` file out of Git while still
+working out of the box after a deploy - no manual setup step required on the
+hosting platform.
