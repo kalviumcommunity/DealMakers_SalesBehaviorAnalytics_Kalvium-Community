@@ -157,6 +157,20 @@ def validate_uploaded_frames(frames: dict[str, pd.DataFrame]) -> list[str]:
     return errors
 
 
+def _normalise_deal_stage(pipeline: pd.DataFrame | None) -> None:
+    """Normalise case/whitespace variants (won, LOST , engaging) to canonical stage names.
+
+    Mutates in place, and runs before validation so the value that gets
+    validated is the same one that flows through to the processed dataset -
+    normalising only for the validation check would let a lowercase stage
+    pass validation while silently failing every downstream `.isin(["Won",
+    "Lost"])` comparison.
+    """
+    if pipeline is None or "deal_stage" not in pipeline.columns:
+        return
+    pipeline["deal_stage"] = pipeline["deal_stage"].str.strip().str.title()
+
+
 def process_uploaded_dataset(uploaded_files: dict[str, BinaryIO]) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     """Read, validate, standardize, and feature-engineer uploaded files in memory."""
     filenames = ["sales_pipeline.csv", *BEHAVIOURAL_COLUMNS]
@@ -171,6 +185,8 @@ def process_uploaded_dataset(uploaded_files: dict[str, BinaryIO]) -> tuple[pd.Da
             errors.append("sales_pipeline.csv must be uploaded.")
         else:
             frames[filename] = _empty_frame(filename)
+
+    _normalise_deal_stage(frames.get("sales_pipeline.csv"))
 
     errors.extend(validate_uploaded_frames(frames))
     if errors:

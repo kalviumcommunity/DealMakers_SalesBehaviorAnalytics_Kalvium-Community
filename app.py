@@ -266,17 +266,42 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
         st.plotly_chart(px.bar(stage_counts, x="deal_stage", y="opportunities", title="Opportunities by Deal Stage"), width="stretch")
     show_sql("Pipeline funnel")
 
+    st.subheader("Pipeline Funnel and Drop-Off")
+    st.caption("Cumulative counts of opportunities that reached each stage, based on the documented flow Prospecting -> Engaging -> Won/Lost. Not currently-in-stage snapshots, which would understate progression since Won/Lost opportunities have already left Prospecting and Engaging.")
+    stage_totals = filtered["deal_stage"].value_counts()
+    reached_engaging_or_beyond = int(stage_totals.reindex(["Engaging", "Won", "Lost"], fill_value=0).sum())
+    funnel_data = pd.DataFrame({
+        "stage": ["Reached Prospecting", "Reached Engaging", "Won"],
+        "opportunities": [len(filtered), reached_engaging_or_beyond, int(stage_totals.get("Won", 0))],
+    })
+    if funnel_data["opportunities"].iloc[0] == 0:
+        st.info("No opportunities match the current filters.")
+    else:
+        funnel_data["drop_off_pct"] = funnel_data["opportunities"].pct_change().mul(-100)
+        st.plotly_chart(px.funnel(funnel_data, x="opportunities", y="stage", title="Pipeline Funnel (Prospecting to Won)"), width="stretch")
+        display = funnel_data.rename(columns={"stage": "Stage", "opportunities": "Opportunities"})
+        display["drop_off_pct"] = display["drop_off_pct"].map(lambda value: f"{value:.1f}%" if pd.notna(value) else "-")
+        display = display.rename(columns={"drop_off_pct": "Drop-off vs Previous Stage"})
+        st.dataframe(display, width="stretch")
+        st.caption(f"Lost: {int(stage_totals.get('Lost', 0)):,} opportunities (counted as having reached Engaging, per the documented flow).")
+
     st.subheader("Trends Over Time")
     engaged = filtered.copy()
     engaged["engage_month"] = pd.to_datetime(engaged["engage_date"], errors="coerce").dt.to_period("M").dt.to_timestamp()
     monthly_engagements = engaged.dropna(subset=["engage_month"]).groupby("engage_month").size().reset_index(name="opportunities")
+    if not monthly_engagements.empty:
+        monthly_engagements = monthly_engagements.sort_values("engage_month")
+        monthly_engagements["cumulative_opportunities"] = monthly_engagements["opportunities"].cumsum()
 
     closed_dated = closed.copy()
     closed_dated["close_month"] = pd.to_datetime(closed_dated["close_date"], errors="coerce").dt.to_period("M").dt.to_timestamp()
     monthly_outcomes = closed_dated.dropna(subset=["close_month"]).groupby("close_month").agg(
         closed=("opportunity_id", "count"), won=("is_won", "sum"),
     ).reset_index()
-    monthly_outcomes["win_rate"] = monthly_outcomes["won"] / monthly_outcomes["closed"] * 100
+    if not monthly_outcomes.empty:
+        monthly_outcomes = monthly_outcomes.sort_values("close_month")
+        monthly_outcomes["win_rate"] = monthly_outcomes["won"] / monthly_outcomes["closed"] * 100
+        monthly_outcomes["win_rate_rolling_3mo"] = monthly_outcomes["win_rate"].rolling(3, min_periods=1).mean()
 
     if monthly_engagements.empty and monthly_outcomes.empty:
         st.info("No dated opportunities available for a trend view with the current filters.")
@@ -288,10 +313,48 @@ def show_dashboard(data: pd.DataFrame, dataset_label: str) -> None:
                 width="stretch",
             )
         if not monthly_outcomes.empty:
+            win_rate_long = monthly_outcomes.melt(
+                id_vars="close_month", value_vars=["win_rate", "win_rate_rolling_3mo"], var_name="series", value_name="value",
+            )
+            win_rate_long["series"] = win_rate_long["series"].map({"win_rate": "Monthly", "win_rate_rolling_3mo": "3-Month Rolling Average"})
             trend_columns[1].plotly_chart(
-                px.line(monthly_outcomes, x="close_month", y="win_rate", markers=True, title="Win Rate by Month (Closed Deals)"),
+                px.line(win_rate_long, x="close_month", y="value", color="series", markers=True, title="Win Rate by Month (with Rolling Average)"),
                 width="stretch",
             )
+        if not monthly_engagements.empty:
+            st.plotly_chart(
+                px.area(monthly_engagements, x="engage_month", y="cumulative_opportunities", title="Cumulative Opportunities Engaged"),
+                width="stretch",
+            )
+    show_sql("Month-over-month win rate change for closed deals (CTE + window function: LAG)")
+
+    st.subheader("Distribution Analysis")
+    distribution_columns = st.columns(2)
+    if closed["deal_duration_days"].notna().any():
+        duration_skew = closed["deal_duration_days"].skew()
+        distribution_columns[0].plotly_chart(
+            px.histogram(closed, x="deal_duration_days", title="Deal Duration Distribution (Closed Deals)"), width="stretch",
+        )
+        distribution_columns[0].caption(f"Skewness: {duration_skew:.2f} ({'right-skewed' if duration_skew > 0.5 else 'left-skewed' if duration_skew < -0.5 else 'roughly symmetric'})")
+    if won["close_value"].notna().any():
+        value_skew = won["close_value"].skew()
+        distribution_columns[1].plotly_chart(
+            px.histogram(won, x="close_value", title="Close Value Distribution (Won Deals)"), width="stretch",
+        )
+        distribution_columns[1].caption(f"Skewness: {value_skew:.2f} ({'right-skewed' if value_skew > 0.5 else 'left-skewed' if value_skew < -0.5 else 'roughly symmetric'}). {int(won['is_close_value_outlier'].sum())} statistical outliers (IQR method).")
+
+    st.subheader("Correlation Analysis")
+    correlation_columns = ["response_rate", "avg_response_time_hours", "activity_count", "deal_duration_days", "close_value", "stage_transition_count"]
+    available_columns = [column for column in correlation_columns if column in filtered.columns and filtered[column].notna().any()]
+    correlation_method = st.radio("Correlation method", ["pearson", "spearman"], horizontal=True, key="correlation_method")
+    if len(available_columns) >= 2:
+        correlation_matrix = filtered[available_columns].corr(method=correlation_method)
+        st.plotly_chart(
+            px.imshow(correlation_matrix, text_auto=".2f", color_continuous_scale="RdBu_r", zmin=-1, zmax=1, title=f"{correlation_method.title()} Correlation Between Numeric Features"),
+            width="stretch",
+        )
+    else:
+        st.info("Not enough numeric fields with data in the current selection to compute correlations.")
 
     st.subheader("Behavioural Patterns by Deal Speed")
     speed_summary = closed.groupby("deal_speed").agg(

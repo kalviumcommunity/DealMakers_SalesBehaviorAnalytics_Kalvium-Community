@@ -75,6 +75,17 @@ def load_and_standardise(raw_data: Path = RAW_DATA) -> dict[str, pd.DataFrame]:
 
         datasets[name] = frame
 
+    # Explicit type enforcement: identifiers are always strings (never
+    # silently read as int64, which would break string joins downstream)
+    # and monetary values are always float, never left as mixed object dtype.
+    for id_column in ("opportunity_id", "email_id", "activity_id", "transition_id"):
+        for frame in datasets.values():
+            if id_column in frame.columns:
+                frame[id_column] = frame[id_column].astype(str)
+    datasets["pipeline"]["close_value"] = pd.to_numeric(datasets["pipeline"]["close_value"], errors="coerce")
+    datasets["emails"]["response_time_hours"] = pd.to_numeric(datasets["emails"]["response_time_hours"], errors="coerce")
+    datasets["stages"]["days_in_previous_stage"] = pd.to_numeric(datasets["stages"]["days_in_previous_stage"], errors="coerce")
+
     return datasets
 
 
@@ -103,6 +114,19 @@ def validate_datasets(datasets: dict[str, pd.DataFrame]) -> list[dict[str, str]]
             "pass" if duplicate_count == 0 else "fail",
             f"{duplicate_count} duplicate values in {dataset_name}",
         ))
+
+    # Near-duplicate check: distinct opportunity_id values that otherwise
+    # share every other identifying field. Flagged as a warning, not a
+    # failure, since this can be a legitimate repeat sale rather than a
+    # data-entry error.
+    near_duplicate_keys = ["account", "product", "engage_date", "close_value"]
+    comparable = pipeline.dropna(subset=near_duplicate_keys)
+    near_duplicate_count = int(comparable.duplicated(subset=near_duplicate_keys, keep=False).sum())
+    findings.append(_finding(
+        "near_duplicate_opportunities",
+        "pass" if near_duplicate_count == 0 else "warning",
+        f"{near_duplicate_count} opportunities share account, product, engage date, and close value with another row.",
+    ))
 
     allowed_stages = {"Prospecting", "Engaging", "Won", "Lost"}
     unexpected_stages = sorted(set(pipeline["deal_stage"].dropna()) - allowed_stages)

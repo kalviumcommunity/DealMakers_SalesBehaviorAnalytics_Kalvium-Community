@@ -22,6 +22,9 @@ def create_pipeline_features(pipeline: pd.DataFrame) -> pd.DataFrame:
     pipeline["is_closed"] = pipeline["deal_stage"].isin(["Won", "Lost"]).astype(int)
     pipeline["is_won"] = (pipeline["deal_stage"] == "Won").astype(int)
     pipeline["deal_duration_days"] = (pipeline["close_date"] - pipeline["engage_date"]).dt.days
+    pipeline["engage_day_of_week"] = pipeline["engage_date"].dt.day_name()
+    pipeline["engage_month_name"] = pipeline["engage_date"].dt.month_name()
+    pipeline["engage_week_of_year"] = pipeline["engage_date"].dt.isocalendar().week.astype("Int64")
 
     closed = pipeline["is_closed"].eq(1)
     duration = pipeline.loc[closed, "deal_duration_days"]
@@ -129,12 +132,20 @@ def add_engagement_features(features: pd.DataFrame) -> pd.DataFrame:
 
 def build_feature_dataset(datasets: dict[str, pd.DataFrame]) -> pd.DataFrame:
     features = create_pipeline_features(datasets["pipeline"])
-    for aggregates in (
-        create_email_features(datasets["emails"]),
-        create_activity_features(datasets["activities"]),
-        create_stage_features(datasets["stages"]),
+    print(f"Pipeline features: {len(features)} rows")
+    for name, aggregates in (
+        ("emails", create_email_features(datasets["emails"])),
+        ("activities", create_activity_features(datasets["activities"])),
+        ("stages", create_stage_features(datasets["stages"])),
     ):
+        before = len(features)
+        # validate="one_to_one" raises if the merge would duplicate or drop
+        # rows; the row-count print below is a visible confirmation of that
+        # guarantee, not a substitute for it.
         features = features.merge(aggregates, on="opportunity_id", how="left", validate="one_to_one")
+        after = len(features)
+        status = "unchanged" if before == after else "CHANGED"
+        print(f"Merged {name}: {before} -> {after} rows ({status})")
     return add_engagement_features(features)
 
 
