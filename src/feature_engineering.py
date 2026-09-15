@@ -2,12 +2,15 @@
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 try:
     from .data_preparation import load_and_standardise
+    from .numeric_analysis import iqr_outliers
 except ImportError:
     from data_preparation import load_and_standardise
+    from numeric_analysis import iqr_outliers
 
 
 PROCESSED_DATA = Path("data/processed")
@@ -19,13 +22,22 @@ def create_pipeline_features(pipeline: pd.DataFrame) -> pd.DataFrame:
     pipeline["is_closed"] = pipeline["deal_stage"].isin(["Won", "Lost"]).astype(int)
     pipeline["is_won"] = (pipeline["deal_stage"] == "Won").astype(int)
     pipeline["deal_duration_days"] = (pipeline["close_date"] - pipeline["engage_date"]).dt.days
-    pipeline["deal_speed"] = "Open"
-    duration = pipeline.loc[pipeline["is_closed"].eq(1), "deal_duration_days"]
-    lower, upper = duration.quantile([1 / 3, 2 / 3])
+
     closed = pipeline["is_closed"].eq(1)
-    pipeline.loc[closed & pipeline["deal_duration_days"].le(lower), "deal_speed"] = "Fast"
-    pipeline.loc[closed & pipeline["deal_duration_days"].gt(lower) & pipeline["deal_duration_days"].le(upper), "deal_speed"] = "Medium"
-    pipeline.loc[closed & pipeline["deal_duration_days"].gt(upper), "deal_speed"] = "Slow"
+    duration = pipeline.loc[closed, "deal_duration_days"]
+    lower, upper = duration.quantile([1 / 3, 2 / 3])
+    pipeline["deal_speed"] = np.select(
+        condlist=[
+            closed & pipeline["deal_duration_days"].le(lower),
+            closed & pipeline["deal_duration_days"].le(upper),
+            closed,
+        ],
+        choicelist=["Fast", "Medium", "Slow"],
+        default="Open",
+    )
+
+    won_close_value = pipeline["close_value"].where(pipeline["is_won"].eq(1))
+    pipeline["is_close_value_outlier"] = iqr_outliers(won_close_value)
     return pipeline
 
 
@@ -105,14 +117,13 @@ def add_engagement_features(features: pd.DataFrame) -> pd.DataFrame:
 
     active = features["has_behavioural_history"].eq(1)
     activity_median = features.loc[active, "activity_count"].median()
-    features["engagement_level"] = "No history"
-    features.loc[active, "engagement_level"] = "Low"
-    features.loc[active & features["response_rate"].ge(0.6) & features["activity_count"].ge(activity_median), "engagement_level"] = "High"
-    features.loc[
-        active & features["engagement_level"].ne("High")
-        & (features["response_rate"].ge(0.35) | features["activity_count"].ge(activity_median)),
-        "engagement_level",
-    ] = "Medium"
+    high = active & features["response_rate"].ge(0.6) & features["activity_count"].ge(activity_median)
+    medium = active & (features["response_rate"].ge(0.35) | features["activity_count"].ge(activity_median))
+    features["engagement_level"] = np.select(
+        condlist=[high, medium, active],
+        choicelist=["High", "Medium", "Low"],
+        default="No history",
+    )
     return features
 
 

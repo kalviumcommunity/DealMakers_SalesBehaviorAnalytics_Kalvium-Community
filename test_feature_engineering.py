@@ -46,6 +46,28 @@ class CreatePipelineFeaturesTests(unittest.TestCase):
         self.assertEqual(speed["A4"], "Open")
         self.assertIn(speed["A1"], {"Fast", "Medium", "Slow"})
 
+    def test_outlier_flag_present_and_false_for_typical_won_values(self):
+        features = create_pipeline_features(_pipeline_frame())
+        self.assertIn("is_close_value_outlier", features.columns)
+        won_flags = features.loc[features["is_won"].eq(1), "is_close_value_outlier"]
+        self.assertFalse(won_flags.any())
+
+    def test_extreme_won_value_is_flagged_as_outlier(self):
+        pipeline = pd.DataFrame({
+            "opportunity_id": ["W1", "W2", "W3", "W4", "W5"],
+            "sales_agent": ["Agent One"] * 5,
+            "product": ["Product"] * 5,
+            "account": ["Account"] * 5,
+            "deal_stage": ["Won"] * 5,
+            "engage_date": pd.to_datetime(["2026-01-01"] * 5),
+            "close_date": pd.to_datetime(["2026-01-11"] * 5),
+            "close_value": [1000, 1100, 950, 1050, 5_000_000],
+        })
+        features = create_pipeline_features(pipeline)
+        flags = features.set_index("opportunity_id")["is_close_value_outlier"]
+        self.assertTrue(flags["W5"])
+        self.assertFalse(flags.drop("W5").any())
+
 
 class CreateEmailFeaturesTests(unittest.TestCase):
     def test_empty_emails_return_expected_columns(self):
