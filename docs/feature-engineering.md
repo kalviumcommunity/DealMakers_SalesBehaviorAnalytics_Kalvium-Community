@@ -15,6 +15,10 @@ descriptive behavioural aggregates. There is no predictive model.
   `src/numeric_analysis.py`'s NumPy-vectorised `iqr_outliers`. It is
   descriptive only - flagged deals are not removed or treated differently
   anywhere else in the pipeline.
+- `engage_day_of_week`, `engage_month_name`, and `engage_week_of_year` are
+  derived from `engage_date` for time-based grouping. All three are null for
+  opportunities with no `engage_date` (open Prospecting deals) rather than
+  defaulting to a misleading value like week 0.
 
 ## Behavioural fields
 

@@ -53,6 +53,19 @@ class UploadProcessingTests(unittest.TestCase):
     def test_invalid_stage_is_rejected(self):
         self.assert_upload_rejected(PIPELINE.replace("Prospecting", "Unknown"), "invalid deal stages")
 
+    def test_lowercase_stage_is_normalised_not_rejected(self):
+        lowercase = PIPELINE.replace("Won", "won").replace("Prospecting", "prospecting")
+        features, _ = process_uploaded_dataset({"sales_pipeline.csv": upload(lowercase, "sales_pipeline.csv")})
+        won_row = features.loc[features["opportunity_id"] == "A1"].iloc[0]
+        self.assertEqual(won_row["deal_stage"], "Won")
+        self.assertEqual(won_row["is_won"], 1)
+
+    def test_whitespace_padded_stage_is_normalised(self):
+        padded = PIPELINE.replace("Won", " Won  ")
+        features, _ = process_uploaded_dataset({"sales_pipeline.csv": upload(padded, "sales_pipeline.csv")})
+        won_row = features.loc[features["opportunity_id"] == "A1"].iloc[0]
+        self.assertEqual(won_row["deal_stage"], "Won")
+
     def test_duplicate_opportunity_is_rejected(self):
         duplicate = PIPELINE + "A1,Agent One,Product,Account,Won,2026-01-01,2026-01-11,1000\n"
         self.assert_upload_rejected(duplicate, "duplicate opportunity_id")

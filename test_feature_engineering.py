@@ -46,6 +46,21 @@ class CreatePipelineFeaturesTests(unittest.TestCase):
         self.assertEqual(speed["A4"], "Open")
         self.assertIn(speed["A1"], {"Fast", "Medium", "Slow"})
 
+    def test_engage_date_features(self):
+        features = create_pipeline_features(_pipeline_frame())
+        row = features.set_index("opportunity_id").loc["A1"]
+        self.assertEqual(row["engage_day_of_week"], "Thursday")
+        self.assertEqual(row["engage_month_name"], "January")
+        self.assertEqual(row["engage_week_of_year"], 1)
+
+    def test_engage_date_features_are_null_when_engage_date_missing(self):
+        pipeline = _pipeline_frame()
+        pipeline.loc[pipeline["opportunity_id"] == "A4", "engage_date"] = pd.NaT
+        features = create_pipeline_features(pipeline)
+        row = features.set_index("opportunity_id").loc["A4"]
+        self.assertTrue(pd.isna(row["engage_day_of_week"]))
+        self.assertTrue(pd.isna(row["engage_week_of_year"]))
+
     def test_outlier_flag_present_and_false_for_typical_won_values(self):
         features = create_pipeline_features(_pipeline_frame())
         self.assertIn("is_close_value_outlier", features.columns)

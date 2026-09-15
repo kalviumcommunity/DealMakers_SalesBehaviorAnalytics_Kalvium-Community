@@ -42,7 +42,10 @@ The application contains:
 - **Overview:** pipeline stages, opportunity counts, closed and won deals, win rate, duration, and revenue.
 - **Filters:** sales agent, deal stage, product, account, and an engagement date range.
 - **Behaviour Analysis:** response rates, response times, activities, deal speed, and Won versus Lost comparisons.
-- **Trends Over Time:** monthly opportunity volume and monthly win rate for closed deals.
+- **Pipeline Funnel and Drop-Off:** cumulative Prospecting-to-Won funnel with drop-off percentages between stages.
+- **Trends Over Time:** monthly opportunity volume (with a cumulative view) and monthly win rate with a 3-month rolling average.
+- **Distribution Analysis:** deal-duration and close-value histograms with skewness and outlier counts.
+- **Correlation Analysis:** Pearson/Spearman correlation heatmap across response rate, activity, duration, and value.
 - **Sales Agent Analysis:** descriptive comparisons of agent opportunities, activities, responses, and duration.
 - **Opportunity Explorer:** a complete profile for one selected opportunity.
 - **Data Upload:** validation, preview, and in-memory processing of compatible CSV files.
