@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from src.load_database import build_database, load_features
 from src.upload_processing import process_uploaded_dataset
 
 
@@ -37,7 +38,7 @@ def to_csv_bytes(data: pd.DataFrame) -> bytes:
 @st.cache_data
 def load_demo_data() -> pd.DataFrame:
     if not DB_PATH.exists():
-        return pd.DataFrame()
+        build_database(load_features())
     with sqlite3.connect(DB_PATH) as connection:
         return pd.read_sql("SELECT * FROM opportunity_features", connection)
 
