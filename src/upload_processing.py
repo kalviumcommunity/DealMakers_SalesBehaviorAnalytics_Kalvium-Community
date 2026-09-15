@@ -49,19 +49,34 @@ def _empty_frame(filename: str) -> pd.DataFrame:
     return pd.DataFrame(columns=sorted(columns))
 
 
-def _read_csv(uploaded_file: BinaryIO, filename: str) -> tuple[pd.DataFrame, list[str]]:
+JSON_ALIASES = {"sales_pipeline.csv": "sales_pipeline.json"}
+
+
+def _read_frame(uploaded_file: BinaryIO, filename: str) -> tuple[pd.DataFrame, list[str]]:
+    """Read an uploaded CSV, or - for the main pipeline file only - JSON.
+
+    JSON support is limited to sales_pipeline.csv/.json: the behavioural
+    files (email/activity/stage history) stay CSV-only, since extending the
+    per-file column/date-column config to a second format for all four
+    files would be a much larger change for uncertain benefit.
+    """
     actual_name = getattr(uploaded_file, "name", filename)
-    if actual_name.rsplit("/", 1)[-1] != filename:
-        return _empty_frame(filename), [f"Expected {filename}, but received {actual_name}."]
-    if not filename.lower().endswith(".csv"):
-        return _empty_frame(filename), [f"{filename}: only CSV files are supported."]
+    basename = actual_name.rsplit("/", 1)[-1]
+    json_alias = JSON_ALIASES.get(filename)
+    allowed_names = {filename} | ({json_alias} if json_alias else set())
+    if basename not in allowed_names:
+        expected = f"{filename} or {json_alias}" if json_alias else filename
+        return _empty_frame(filename), [f"Expected {expected}, but received {actual_name}."]
+
+    is_json = basename.endswith(".json")
     try:
         content = uploaded_file.getvalue()
         if not content.strip():
             return _empty_frame(filename), [f"{filename}: the uploaded file is empty."]
-        frame = pd.read_csv(BytesIO(content))
-    except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError) as error:
-        return _empty_frame(filename), [f"{filename}: could not read the CSV ({error})."]
+        frame = pd.read_json(BytesIO(content)) if is_json else pd.read_csv(BytesIO(content))
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError, ValueError) as error:
+        file_format = "JSON" if is_json else "CSV"
+        return _empty_frame(filename), [f"{filename}: could not read the {file_format} ({error})."]
     if frame.empty:
         return frame, [f"{filename}: the uploaded dataset contains no rows."]
     return frame, []
@@ -178,7 +193,7 @@ def process_uploaded_dataset(uploaded_files: dict[str, BinaryIO]) -> tuple[pd.Da
     errors: list[str] = []
     for filename in filenames:
         if filename in uploaded_files:
-            frame, file_errors = _read_csv(uploaded_files[filename], filename)
+            frame, file_errors = _read_frame(uploaded_files[filename], filename)
             errors.extend(file_errors)
             frames[filename] = frame
         elif filename == "sales_pipeline.csv":

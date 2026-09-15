@@ -1,4 +1,5 @@
 from io import BytesIO
+import json
 import unittest
 
 from src.upload_processing import process_uploaded_dataset
@@ -72,6 +73,27 @@ class UploadProcessingTests(unittest.TestCase):
 
     def test_invalid_date_is_rejected(self):
         self.assert_upload_rejected(PIPELINE.replace("2026-01-01", "not-a-date", 1), "invalid engage_date")
+
+    def test_json_pipeline_upload_is_accepted(self):
+        records = [
+            {"opportunity_id": "A1", "sales_agent": "Agent One", "product": "Product", "account": "Account",
+             "deal_stage": "Won", "engage_date": "2026-01-01", "close_date": "2026-01-11", "close_value": 1000},
+            {"opportunity_id": "A2", "sales_agent": "Agent One", "product": "Product", "account": "Account",
+             "deal_stage": "Prospecting", "engage_date": "2026-02-01", "close_date": None, "close_value": None},
+        ]
+        payload = json.dumps(records)
+        features, _ = process_uploaded_dataset({"sales_pipeline.csv": upload(payload, "sales_pipeline.json")})
+        self.assertEqual(len(features), 2)
+        won_row = features.loc[features["opportunity_id"] == "A1"].iloc[0]
+        self.assertEqual(won_row["is_won"], 1)
+
+    def test_malformed_json_is_rejected_not_crashed(self):
+        with self.assertRaisesRegex(ValueError, "could not read the JSON"):
+            process_uploaded_dataset({"sales_pipeline.csv": upload("{not valid json", "sales_pipeline.json")})
+
+    def test_unexpected_extension_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Expected sales_pipeline.csv or sales_pipeline.json"):
+            process_uploaded_dataset({"sales_pipeline.csv": upload(PIPELINE, "sales_pipeline.txt")})
 
     def test_orphan_behavior_is_rejected(self):
         files = {

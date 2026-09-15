@@ -37,22 +37,21 @@ The same five scripts can still be run individually if you only need one stage:
 
 ## Dashboard
 
-The application contains:
+The dashboard is organised into sidebar-navigated sections (see
+`DASHBOARD_PAGES` in `app.py`):
 
-- **Overview:** pipeline stages, opportunity counts, closed and won deals, win rate, duration, and revenue.
-- **Filters:** sales agent, deal stage, product, account, and an engagement date range.
-- **Behaviour Analysis:** response rates, response times, activities, deal speed, and Won versus Lost comparisons.
-- **Pipeline Funnel and Drop-Off:** cumulative Prospecting-to-Won funnel with drop-off percentages between stages.
-- **Trends Over Time:** monthly opportunity volume (with a cumulative view) and monthly win rate with a 3-month rolling average.
-- **Distribution Analysis:** deal-duration and close-value histograms with skewness and outlier counts.
-- **Correlation Analysis:** Pearson/Spearman correlation heatmap across response rate, activity, duration, and value.
-- **Sales Agent Analysis:** descriptive comparisons of agent opportunities, activities, responses, and duration.
-- **Opportunity Explorer:** a complete profile for one selected opportunity.
-- **Data Upload:** validation, preview, and in-memory processing of compatible CSV files.
-- **Coaching Signals:** descriptive differences between observed groups, without predictive recommendations.
-- **CSV export:** download the filtered opportunities, agent summary, and product summary as CSV files.
-- **Alert Monitoring:** configurable win-rate, response-rate, and response-time thresholds with severity-labelled warnings.
-- **Email Reporting:** send an HTML KPI-and-alerts summary to a chosen recipient; see [docs/alerts-and-reporting.md](docs/alerts-and-reporting.md) for required SMTP environment variables.
+- **Overview:** pipeline stages, opportunity counts, closed and won deals, win rate, duration, and revenue; CSV export and a full report bundle (ZIP) download.
+- **Pipeline, Funnel & Trends:** opportunities by stage, a cumulative Prospecting-to-Won funnel with drop-off percentages, monthly opportunity volume, and monthly win rate with a 3-month rolling average.
+- **Distribution & Correlation:** deal-duration and close-value histograms with skewness and outlier counts, plus a Pearson/Spearman correlation heatmap.
+- **Behavioural Analysis:** response rates, response times, activities, deal speed, Won versus Lost comparisons, engagement-level comparison, and Coaching Signals.
+- **Agents & Products:** descriptive comparisons of agent opportunities, activities, responses, and duration; deal duration by product; CSV export for both summaries.
+- **Opportunity Explorer:** a complete profile for one selected opportunity, or two side by side.
+- **Alerts & Reporting:** configurable win-rate, response-rate, and response-time thresholds with severity-labelled warnings, and email delivery of an HTML KPI-and-alerts summary - see [docs/alerts-and-reporting.md](docs/alerts-and-reporting.md) for required SMTP environment variables.
+
+Filters (sales agent, deal stage, product, account, engagement date range)
+apply across every section and include a **Reset Filters** button. **Data
+Upload** (CSV or JSON pipeline file) is available from the Dataset selector
+regardless of section.
 
 Run the dashboard with:
 
@@ -62,20 +61,22 @@ Run the dashboard with:
 
 ## Uploading Data
 
-Choose **Uploaded Dataset** in the sidebar. `sales_pipeline.csv` is required and must contain:
+Choose **Uploaded Dataset** in the sidebar. `sales_pipeline.csv` (or
+`sales_pipeline.json`, an array of the same records) is required and must
+contain:
 
 ```text
 opportunity_id, sales_agent, product, account, deal_stage,
 engage_date, close_date, close_value
 ```
 
-The following files are optional:
+The following files are optional, and CSV-only:
 
 - `email_history.csv`
 - `crm_activities.csv`
 - `stage_history.csv`
 
-The application validates CSV format, expected filenames, required columns, duplicates, dates, stages, numeric values, and behavioural opportunity IDs. It shows a preview before processing. Pipeline-only uploads work and are labelled `No history` where behavioural records are unavailable.
+The application validates file format, expected filenames, required columns, duplicates, dates, stages, numeric values, and behavioural opportunity IDs. `deal_stage` values are normalised for case and whitespace (`won`, `WON `, `Won` all match) before validation. It shows a preview before processing. Pipeline-only uploads work and are labelled `No history` where behavioural records are unavailable.
 
 Uploaded data is processed in memory in the current Streamlit session. It does not overwrite the demo CSV files, feature dataset, or SQLite database. Switch back to **Demo Dataset** at any time to return to the original analysis.
 
