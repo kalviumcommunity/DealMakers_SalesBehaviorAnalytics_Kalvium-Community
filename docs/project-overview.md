@@ -119,4 +119,8 @@ Since this behavioral data is unavailable publicly, the team plans to **simulate
 | [`docs/feature-engineering.md`](./feature-engineering.md) | Opportunity-level feature definitions |
 | [`docs/database.md`](./database.md) | SQLite analytical layer used by the dashboard and SQL queries |
 | [`docs/alerts-and-reporting.md`](./alerts-and-reporting.md) | Threshold alert monitoring and email report configuration |
+| [`docs/wireframes.md`](./wireframes.md) | Text wireframes of the dashboard layout |
+| [`docs/data-dictionary-behavioural.md`](./data-dictionary-behavioural.md) | Simulated and engineered field definitions, thresholds, and null semantics |
+| [`docs/root-cause-investigation.md`](./root-cause-investigation.md) | Structured workflow for investigating a flagged metric using existing dashboard tools |
+| [`docs/executive-summary-example.md`](./executive-summary-example.md) | Worked example of a stakeholder-facing narrative report from the demo dataset |
 | [`README.md`](../README.md) | Team charter, dashboard features, and run commands |
